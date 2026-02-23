@@ -262,11 +262,11 @@ public class HttpProxyServer extends AbstractProxyServer {
     @Override
     protected void handleClient(Socket client) {
         String remoteAddr = client.getInetAddress().getHostAddress();
-        try (client) {
-            InputStream in = new BufferedInputStream(client.getInputStream());
-            OutputStream out = client.getOutputStream();
+        try (Socket s = client) {
+            InputStream in = new BufferedInputStream(s.getInputStream());
+            OutputStream out = s.getOutputStream();
 
-            while (!client.isClosed() && processNextRequest(client, in, out, remoteAddr)) {
+            while (!s.isClosed() && processNextRequest(s, in, out, remoteAddr)) {
                 // Loop continues as long as client is connected and request is processed
             }
         } catch (ProtocolException e) {

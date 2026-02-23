@@ -20,7 +20,6 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.yuubin.proxy.config.LoggingConfig;
 import com.yuubin.proxy.config.YuubinProperties;
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,7 +59,6 @@ public class LoggingService {
      * 
      * @param properties The configuration properties containing logging settings.
      */
-    @SuppressFBWarnings("EI_EXPOSE_REP2")
     public LoggingService(YuubinProperties properties) {
         this.properties = new AtomicReference<>(properties);
         startWriterThread();
@@ -326,7 +324,6 @@ public class LoggingService {
      * 
      * @param properties The new configuration properties.
      */
-    @SuppressFBWarnings("EI_EXPOSE_REP2")
     public void updateProperties(YuubinProperties properties) {
         synchronized (lock) {
             this.properties.set(properties);

@@ -79,10 +79,10 @@ public class Socks4ProxyServer extends AbstractProxyServer {
     @Override
     protected void handleClient(Socket client) {
         String remoteAddr = client.getInetAddress().getHostAddress();
-        try (client) {
-            setupSocket(client);
-            DataInputStream in = new DataInputStream(client.getInputStream());
-            DataOutputStream out = new DataOutputStream(client.getOutputStream());
+        try (Socket s = client) {
+            setupSocket(s);
+            DataInputStream in = new DataInputStream(s.getInputStream());
+            DataOutputStream out = new DataOutputStream(s.getOutputStream());
 
             Socks4Request request = readRequest(in);
             if (request == null) {
@@ -97,7 +97,7 @@ public class Socks4ProxyServer extends AbstractProxyServer {
             }
 
             if (request.command() == 1) { // CONNECT
-                handleConnect(client, out, request);
+                handleConnect(s, out, request);
             } else {
                 sendResponse(out, 91, 0, new byte[4]);
                 throw new ProtocolException("SOCKS4 command not supported: " + request.command());
@@ -195,7 +195,10 @@ public class Socks4ProxyServer extends AbstractProxyServer {
         return buffer.toString(StandardCharsets.UTF_8);
     }
 
-    private record Socks4Request(byte command, int port, byte[] ipBytes, String userId, String targetHost) {
+    /**
+     * Internal representation of a SOCKS4 request.
+     */
+    record Socks4Request(byte command, int port, byte[] ipBytes, String userId, String targetHost) {
         @Override
         public boolean equals(Object o) {
             if (this == o) {

@@ -55,7 +55,7 @@ public class AuthService {
      * 
      * @param properties The root configuration properties.
      */
-    @SuppressFBWarnings({ "EI_EXPOSE_REP2", "CT_CONSTRUCTOR_THROW" })
+    @SuppressFBWarnings("CT_CONSTRUCTOR_THROW")
     public AuthService(YuubinProperties properties) {
         this.properties.set(properties);
         reload();
@@ -66,7 +66,6 @@ public class AuthService {
      * 
      * @param properties The new configuration properties.
      */
-    @SuppressFBWarnings("EI_EXPOSE_REP2")
     public void updateProperties(YuubinProperties properties) {
         this.properties.set(properties);
         reload();

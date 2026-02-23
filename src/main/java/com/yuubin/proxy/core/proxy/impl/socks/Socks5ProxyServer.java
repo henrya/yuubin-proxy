@@ -79,10 +79,10 @@ public class Socks5ProxyServer extends AbstractProxyServer {
     @Override
     protected void handleClient(Socket client) {
         String remoteAddr = client.getInetAddress().getHostAddress();
-        try (client) {
-            setupSocket(client);
-            DataInputStream in = new DataInputStream(client.getInputStream());
-            DataOutputStream out = new DataOutputStream(client.getOutputStream());
+        try (Socket s = client) {
+            setupSocket(s);
+            DataInputStream in = new DataInputStream(s.getInputStream());
+            DataOutputStream out = new DataOutputStream(s.getOutputStream());
 
             if (!performHandshake(in, out, remoteAddr)) {
                 return;
@@ -91,7 +91,7 @@ public class Socks5ProxyServer extends AbstractProxyServer {
             Socks5Request request = readRequest(in);
 
             if (request.cmd() == 1) { // CONNECT
-                handleConnect(client, out, request);
+                handleConnect(s, out, request);
             } else {
                 sendErrorResponse(out, 7); // Command not supported
                 throw new ProtocolException("SOCKS5 command not supported: " + request.cmd());
