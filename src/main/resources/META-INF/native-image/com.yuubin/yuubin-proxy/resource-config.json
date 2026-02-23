@@ -2,10 +2,10 @@
   "resources": {
     "includes": [
       {
-        "pattern": ".*\.yml$"
+        "pattern": ".*\\.yml$"
       },
       {
-        "pattern": ".*\.yaml$"
+        "pattern": ".*\\.yaml$"
       }
     ]
   }
