@@ -96,7 +96,7 @@ jobs:
         run: mvn clean package -DskipTests
 
       - name: Download Native Binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: target/native-binaries
           pattern: yuubin-proxy-*
