@@ -1,0 +1,11 @@
+# Secure SOCKS5 Proxy Example
+# Use case: Providing an authenticated egress point for tools or scrapers.
+
+proxies:
+  - name: secure-socks
+    port: 1080
+    type: SOCKS5
+    authEnabled: true # Requires users defined in users.yml
+    timeout: 30000   # 30s timeout
+    blacklist:
+      - 10.0.0.50    # Block internal malicious actor

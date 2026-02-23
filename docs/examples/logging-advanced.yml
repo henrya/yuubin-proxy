@@ -1,0 +1,27 @@
+# Advanced Logging Example
+# Use case: Customizing log formats to include HTTP methods and query parameters, 
+# and enabling full response logging for auditing.
+
+proxies:
+  - name: verbose-proxy
+    port: 8080
+    type: HTTP
+    rules:
+      - path: /
+        target: http://localhost:3000
+
+logging:
+  # %m = Request Method (e.g., GET)
+  # %q = Query String (e.g., ?id=123)
+  # Default Apache format plus custom tokens
+  format: '%h %l %u %t "%m %r%q" %>s %b'
+  
+  # Enable separate log lines for response details
+  logResponse: true
+  
+  # File logging configuration
+  fileEnabled: true
+  filePath: "logs/advanced"
+  fileName: "access.log"
+  rotation: "DAILY"
+  maxHistory: 7

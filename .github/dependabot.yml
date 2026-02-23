@@ -1,0 +1,36 @@
+version: 2
+updates:
+  # Keep GitHub Actions up to date
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "ci"
+      - "dependencies"
+
+  # Keep Maven dependencies up to date
+  - package-ecosystem: "maven"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "java"
+      - "dependencies"
+    # Batch minor/patch updates together to reduce PR noise
+    groups:
+      micrometer:
+        patterns:
+          - "io.micrometer*"
+      logging:
+        patterns:
+          - "ch.qos.logback*"
+          - "org.slf4j*"
+      test:
+        patterns:
+          - "org.junit*"
+          - "org.mockito*"
+          - "org.assertj*"
+          - "org.awaitility*"
+          - "com.github.tomakehurst*"
+          - "org.wiremock*"

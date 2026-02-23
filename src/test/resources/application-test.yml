@@ -1,0 +1,12 @@
+auth:
+  enabled: true
+  usersPath: classpath:users-test.yml
+logging:
+  format: '%h %l %u %t "%r" %>s %b'
+proxies:
+  - name: test-http-context
+    port: 18888
+    type: HTTP
+    rules:
+      - path: /
+        target: http://localhost:19999

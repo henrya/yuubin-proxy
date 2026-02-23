@@ -1,0 +1,282 @@
+package com.yuubin.proxy.core.services;
+
+import com.yuubin.proxy.config.LoggingConfig;
+import com.yuubin.proxy.config.YuubinProperties;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.concurrent.TimeUnit;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+
+class LoggingServiceTest {
+
+    @TempDir
+    Path tempDir;
+
+    private LoggingService loggingService;
+
+    @AfterEach
+    void tearDown() {
+        if (loggingService != null) {
+            loggingService.shutdown();
+        }
+    }
+
+    @Test
+    void logRequest_doesNotThrow() {
+        YuubinProperties props = new YuubinProperties();
+        LoggingConfig logCfg = new LoggingConfig();
+        props.setLogging(logCfg);
+
+        loggingService = new LoggingService(props);
+        assertThatCode(() -> loggingService.logRequest("127.0.0.1", "user", "GET", "/", 200, 100))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void logSocks_doesNotThrow() {
+        YuubinProperties props = new YuubinProperties();
+        LoggingConfig logCfg = new LoggingConfig();
+        props.setLogging(logCfg);
+        loggingService = new LoggingService(props);
+        assertThatCode(() -> loggingService.logSocks("127.0.0.1", "target:80", "SOCKS5", 0))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void fileLogging_createsFile() throws IOException, InterruptedException {
+        YuubinProperties props = new YuubinProperties();
+        LoggingConfig logCfg = new LoggingConfig();
+        logCfg.setFileEnabled(true);
+        logCfg.setFilePath(tempDir.toString());
+        logCfg.setFileName("test.log");
+        props.setLogging(logCfg);
+
+        loggingService = new LoggingService(props);
+        loggingService.logRequest("127.0.0.1", "user", "GET", "/", 200, 100);
+
+        // Wait for writer thread to process
+        TimeUnit.MILLISECONDS.sleep(500);
+
+        Path logFile = tempDir.resolve("test.log");
+        assertThat(Files.exists(logFile)).isTrue();
+        assertThat(Files.readString(logFile)).contains("GET /");
+    }
+
+    @Test
+    void fileLogging_rotationBySize() throws IOException, InterruptedException {
+        YuubinProperties props = new YuubinProperties();
+        LoggingConfig logCfg = new LoggingConfig();
+        logCfg.setFileEnabled(true);
+        logCfg.setFilePath(tempDir.toString());
+        logCfg.setFileName("rotated.log");
+        logCfg.setRotation("SIZE");
+        logCfg.setMaxSize("100B");
+        props.setLogging(logCfg);
+
+        loggingService = new LoggingService(props);
+
+        // Write enough to trigger rotation
+        String largeLog = "This is a long log line that exceeds 100 bytes when repeated several times...".repeat(2);
+        loggingService.logRequest("127.0.0.1", "user", "GET", largeLog, 200, 100);
+        TimeUnit.MILLISECONDS.sleep(300);
+
+        // This second log should trigger rotation
+        loggingService.logRequest("127.0.0.1", "user", "GET", "Small log", 200, 100);
+        TimeUnit.MILLISECONDS.sleep(300);
+
+        // Check for rotated file
+        File dir = tempDir.toFile();
+        File[] files = dir.listFiles((d, name) -> name.startsWith("rotated.log."));
+        assertThat(files).isNotEmpty();
+
+        // Current log file should exist and have new content
+        Path logFile = tempDir.resolve("rotated.log");
+        assertThat(Files.exists(logFile)).isTrue();
+        assertThat(Files.readString(logFile)).contains("Small log");
+    }
+
+    @Test
+    void fileLogging_rotationDaily() throws InterruptedException {
+        YuubinProperties props = new YuubinProperties();
+        LoggingConfig logCfg = new LoggingConfig();
+        logCfg.setFileEnabled(true);
+        logCfg.setFilePath(tempDir.toString());
+        logCfg.setFileName("daily.log");
+        logCfg.setRotation("DAILY");
+        props.setLogging(logCfg);
+
+        loggingService = new LoggingService(props);
+        loggingService.logRequest("127.0.0.1", null, "GET", "/", 200, 0);
+        TimeUnit.MILLISECONDS.sleep(300);
+
+        Path logFile = tempDir.resolve("daily.log");
+        assertThat(Files.exists(logFile)).isTrue();
+    }
+
+    @Test
+    void logRequest_customFormats() throws IOException, InterruptedException {
+        YuubinProperties props = new YuubinProperties();
+        LoggingConfig logCfg = new LoggingConfig();
+        logCfg.setFileEnabled(true);
+        logCfg.setFilePath(tempDir.toString());
+        logCfg.setFileName("format.log");
+        logCfg.setFormat("%h %u %m %q %r %>s %b");
+        props.setLogging(logCfg);
+
+        loggingService = new LoggingService(props);
+        loggingService.logRequest("127.0.0.1", "admin", "POST", "/api/v1?test=1", 201, 1024);
+
+        TimeUnit.MILLISECONDS.sleep(500);
+
+        Path logFile = tempDir.resolve("format.log");
+        String content = Files.readString(logFile);
+        assertThat(content).contains("127.0.0.1 admin POST ?test=1 POST /api/v1?test=1 HTTP/1.1 201 1024");
+    }
+
+    @Test
+    void fileLogging_cleanupOldLogs() throws InterruptedException {
+        YuubinProperties props = new YuubinProperties();
+        LoggingConfig logCfg = new LoggingConfig();
+        logCfg.setFileEnabled(true);
+        logCfg.setFilePath(tempDir.toString());
+        logCfg.setFileName("cleanup.log");
+        logCfg.setRotation("SIZE");
+        logCfg.setMaxSize("10B");
+        logCfg.setMaxHistory(2);
+        props.setLogging(logCfg);
+
+        loggingService = new LoggingService(props);
+
+        for (int i = 0; i < 5; i++) {
+            loggingService.logRequest("127.0.0.1", null, "GET", "/test" + i, 200, 0);
+            TimeUnit.MILLISECONDS.sleep(300);
+        }
+
+        File dir = tempDir.toFile();
+        File[] files = dir.listFiles((d, name) -> name.startsWith("cleanup.log."));
+        // Should have at most maxHistory (2) rotated files
+        assertThat(files.length).isLessThanOrEqualTo(2);
+    }
+
+    @Test
+    void testUpdateProperties_resetsState() throws InterruptedException {
+        YuubinProperties props = new YuubinProperties();
+        LoggingConfig logCfg = new LoggingConfig();
+        logCfg.setFileEnabled(true);
+        logCfg.setFilePath(tempDir.toString());
+        logCfg.setFileName("update.log");
+        props.setLogging(logCfg);
+
+        loggingService = new LoggingService(props);
+        loggingService.logRequest("127.0.0.1", null, "GET", "/1", 200, 0);
+        TimeUnit.MILLISECONDS.sleep(300);
+
+        YuubinProperties newProps = new YuubinProperties();
+        LoggingConfig newCfg = new LoggingConfig();
+        newCfg.setFileEnabled(true);
+        newCfg.setFilePath(tempDir.toString());
+        newCfg.setFileName("update-new.log");
+        newProps.setLogging(newCfg);
+
+        loggingService.updateProperties(newProps);
+        loggingService.logRequest("127.0.0.1", null, "GET", "/2", 200, 0);
+        TimeUnit.MILLISECONDS.sleep(300);
+
+        assertThat(Files.exists(tempDir.resolve("update-new.log"))).isTrue();
+    }
+
+    @Test
+    void testLogRequest_responseLogging() throws IOException, InterruptedException {
+        YuubinProperties props = new YuubinProperties();
+        LoggingConfig logCfg = new LoggingConfig();
+        logCfg.setFileEnabled(true);
+        logCfg.setFilePath(tempDir.toString());
+        logCfg.setFileName("resp.log");
+        logCfg.setLogResponse(true);
+        props.setLogging(logCfg);
+
+        loggingService = new LoggingService(props);
+        loggingService.logRequest("127.0.0.1", "u", "GET", "/u", 200, 50);
+        TimeUnit.MILLISECONDS.sleep(300);
+
+        String content = Files.readString(tempDir.resolve("resp.log"));
+        assertThat(content).contains("[RESPONSE] GET /u -> STATUS: 200, BYTES: 50");
+    }
+
+    @Test
+    void logSocks_withFileLogging() throws IOException, InterruptedException {
+        YuubinProperties props = new YuubinProperties();
+        LoggingConfig logCfg = new LoggingConfig();
+        logCfg.setFileEnabled(true);
+        logCfg.setFilePath(tempDir.toString());
+        logCfg.setFileName("socks.log");
+        props.setLogging(logCfg);
+
+        loggingService = new LoggingService(props);
+        loggingService.logSocks("127.0.0.1", "target:80", "SOCKS5", 0);
+        TimeUnit.MILLISECONDS.sleep(300);
+
+        assertThat(Files.readString(tempDir.resolve("socks.log"))).contains("SOCKS5 target:80 0");
+    }
+
+    @Test
+    void testRotationWeeklyMonthly() {
+        YuubinProperties props = new YuubinProperties();
+        LoggingConfig logCfg = new LoggingConfig();
+        logCfg.setFileEnabled(true);
+        logCfg.setFilePath(tempDir.toString());
+        logCfg.setFileName("rotation.log");
+        props.setLogging(logCfg);
+        loggingService = new LoggingService(props);
+
+        assertThatCode(() -> {
+            java.lang.reflect.Method checkRotation = LoggingService.class.getDeclaredMethod("checkRotation",
+                    LoggingConfig.class);
+            checkRotation.setAccessible(true);
+
+            logCfg.setRotation("WEEKLY");
+            checkRotation.invoke(loggingService, logCfg);
+
+            logCfg.setRotation("MONTHLY");
+            checkRotation.invoke(loggingService, logCfg);
+        }).doesNotThrowAnyException();
+    }
+
+    @Test
+    void testParseSize() throws Exception {
+        YuubinProperties props = new YuubinProperties();
+        loggingService = new LoggingService(props);
+
+        java.lang.reflect.Method method = LoggingService.class.getDeclaredMethod("parseSize", String.class);
+        method.setAccessible(true);
+
+        assertThat((long) method.invoke(loggingService, "10KB")).isEqualTo(10240L);
+        assertThat((long) method.invoke(loggingService, "1MB")).isEqualTo(1024L * 1024L);
+        assertThat((long) method.invoke(loggingService, "1GB")).isEqualTo(1024L * 1024L * 1024L);
+        assertThat((long) method.invoke(loggingService, "500B")).isEqualTo(500L);
+        assertThat((long) method.invoke(loggingService, "100")).isEqualTo(100L);
+        assertThat((long) method.invoke(loggingService, "invalid")).isEqualTo(10L * 1024L * 1024L); // default
+    }
+
+    @Test
+    void testFormatLogLine_unsupportedTokens() throws Exception {
+        YuubinProperties props = new YuubinProperties();
+        loggingService = new LoggingService(props);
+
+        java.lang.reflect.Method method = LoggingService.class.getDeclaredMethod("formatLogLine",
+                String.class, LoggingService.LogRecord.class);
+        method.setAccessible(true);
+
+        LoggingService.LogRecord record = new LoggingService.LogRecord("h", "u", "t", "r", "s", "b", "m", "q");
+        String result = (String) method.invoke(loggingService, "%% %x %", record);
+        assertThat(result).contains("%% %x %");
+    }
+}

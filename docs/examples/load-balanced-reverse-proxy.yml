@@ -1,0 +1,18 @@
+# Load Balanced Reverse Proxy Example
+# Use case: Distributing traffic across multiple backend nodes with sticky sessions.
+
+proxies:
+  - name: production-api
+    port: 80
+    type: HTTP
+    rules:
+      - path: /
+        targets:
+          - http://backend-srv-1:8080
+          - http://backend-srv-2:8080
+          - http://backend-srv-3:8080
+        loadBalancing: IP_HASH # Ensure same client IP always hits same backend
+        healthCheckPath: /health
+        healthCheckInterval: 5000 # Check every 5s
+        healthCheckTimeout: 2000
+        reverse: true # Rewrite Location headers in responses

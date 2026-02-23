@@ -1,0 +1,15 @@
+# Rate Limited & TLS Protected Proxy Example
+# Use case: Protecting a backend from high-frequency requests and encrypting traffic.
+
+proxies:
+  - name: secure-rate-limited
+    port: 443
+    type: HTTP
+    tlsEnabled: true
+    keystorePath: server-certs.p12
+    keystorePassword: "changeit"
+    rules:
+      - path: /api/search
+        target: http://internal-search-srv:9000
+        rateLimit: 10.0 # 10 requests per second per client IP
+        burst: 20       # Allow occasional bursts up to 20

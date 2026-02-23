@@ -1,0 +1,13 @@
+# Proxy Chaining Example
+# Use case: Forwarding all local proxy traffic to a corporate/parent proxy.
+
+proxies:
+  - name: chained-http
+    port: 8888
+    type: HTTP
+    upstreamProxy:
+      host: corp-proxy.internal
+      port: 3128
+      type: HTTP
+      username: "proxy-user"
+      password: "proxy-password"

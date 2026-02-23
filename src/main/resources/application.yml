@@ -1,0 +1,37 @@
+auth:
+  enabled: true
+  usersPath: users.yml
+  # usersDirectory: /etc/proxy/users  # For Kubernetes ConfigMap mounts (filename=username, content=password)
+  # usersEnv: YUUBIN_USERS           # For environment variables (format: "user1:pass1,user2:pass2")
+logging:
+  format: '%h %l %u %t "%r" %>s %b'
+  logResponse: true
+  fileEnabled: false
+  filePath: logs
+  fileName: yuubin-proxy.log
+  rotation: DAILY # Options: DAILY, WEEKLY, MONTHLY, SIZE
+  maxSize: 10MB   # Only used if rotation: SIZE
+  maxHistory: 30  # Number of old log files to keep
+proxies:
+  - name: http-proxy
+    port: 8080
+    type: HTTP
+    authEnabled: true
+    timeout: 60000 # Connection and request timeout in ms (-1 for none, default 60s)
+    maxRedirects: 0 # Max number of redirects to follow (default 0)
+    rules:
+      - path: /google
+        target: https://www.google.com
+        headers:
+          X-Proxy-By: Yuubin
+      - path: /
+        target: http://localhost:3000
+  - name: socks5-proxy
+    port: 1080
+    type: SOCKS5
+    authEnabled: true
+    timeout: 10000
+  - name: socks4-proxy
+    port: 1081
+    type: SOCKS4
+    authEnabled: false

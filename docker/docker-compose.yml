@@ -1,0 +1,15 @@
+services:
+  yuubin-proxy:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: yuubin-proxy:latest
+    container_name: yuubin-proxy
+    ports:
+      - "8080:8080"  # HTTP
+      - "1080:1080"  # SOCKS5
+      - "1081:1081"  # SOCKS4
+    volumes:
+      - ../src/main/resources/application.yml:/app/config/application.yml:ro
+      - ../users.yml:/app/config/users.yml:ro
+    restart: unless-stopped

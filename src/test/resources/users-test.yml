@@ -1,0 +1,5 @@
+users:
+  - username: admin
+    password: password123
+  - username: user
+    password: secret_pass
