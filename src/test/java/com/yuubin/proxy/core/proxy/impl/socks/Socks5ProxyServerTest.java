@@ -195,7 +195,12 @@ class Socks5ProxyServerTest {
             out.writeShort(targetPort);
 
             // Connection should be closed due to ProtocolException
-            assertThat(in.read()).isEqualTo(-1);
+            try {
+                assertThat(in.read()).isEqualTo(-1);
+            } catch (java.net.SocketException e) {
+                // Connection reset is acceptable when the server forcefully closes an invalid
+                // connection
+            }
         }
     }
 

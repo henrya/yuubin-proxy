@@ -403,7 +403,8 @@ class Socks4ProxyServerTest {
             out.flush();
             socket.shutdownOutput();
 
-            // Should close or return error. Since it throws EOFException in handleClient, it just closes.
+            // Should close or return error. Since it throws EOFException in handleClient,
+            // it just closes.
             assertThat(socket.getInputStream().read()).isEqualTo(-1);
         } finally {
             proxyServer.stop();
@@ -451,7 +452,12 @@ class Socks4ProxyServerTest {
             out.write(longUser);
             out.flush();
 
-            assertThat(socket.getInputStream().read()).isEqualTo(-1);
+            try {
+                assertThat(socket.getInputStream().read()).isEqualTo(-1);
+            } catch (java.net.SocketException e) {
+                // Connection reset is acceptable when the server forcefully closes an invalid
+                // connection
+            }
         } finally {
             proxyServer.stop();
         }
@@ -468,7 +474,7 @@ class Socks4ProxyServerTest {
         AuthService authService = Mockito.mock(AuthService.class);
         io.micrometer.core.instrument.MeterRegistry registry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
         com.yuubin.proxy.config.YuubinProperties globalProps = new com.yuubin.proxy.config.YuubinProperties();
-        
+
         // Test timeout > 0
         ProxyServerConfig config1 = new ProxyServerConfig();
         config1.setPort(proxyPort);
@@ -479,7 +485,7 @@ class Socks4ProxyServerTest {
         Thread t1 = new Thread(server1::start);
         t1.setDaemon(true);
         t1.start();
-        
+
         await().atMost(Duration.ofSeconds(10)).until(() -> {
             try (Socket s = new Socket("localhost", proxyPort)) {
                 return s.isConnected();
@@ -508,7 +514,7 @@ class Socks4ProxyServerTest {
 
     @Test
     void socks4Request_testEqualsAndHashCode() {
-        byte[] ip = {127, 0, 0, 1};
+        byte[] ip = { 127, 0, 0, 1 };
         Socks4ProxyServer.Socks4Request req1 = new Socks4ProxyServer.Socks4Request((byte) 1, 80, ip, "user", "host");
         Socks4ProxyServer.Socks4Request req2 = new Socks4ProxyServer.Socks4Request((byte) 1, 80, ip, "user", "host");
         Socks4ProxyServer.Socks4Request req3 = new Socks4ProxyServer.Socks4Request((byte) 2, 80, ip, "user", "host");
@@ -524,7 +530,7 @@ class Socks4ProxyServerTest {
 
     @Test
     void socks4Request_testToString() {
-        byte[] ip = {127, 0, 0, 1};
+        byte[] ip = { 127, 0, 0, 1 };
         Socks4ProxyServer.Socks4Request req = new Socks4ProxyServer.Socks4Request((byte) 1, 80, ip, "user", "host");
         String str = req.toString();
         assertThat(str).contains("command=1");
