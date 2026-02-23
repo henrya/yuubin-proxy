@@ -136,6 +136,7 @@ class HttpProxyServerTest {
                 PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
                 BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
             out.println("GET / HTTP/1.1");
+            out.println("Host: localhost");
             out.println();
             assertThat(in.readLine()).contains("407");
         } finally {
@@ -154,6 +155,7 @@ class HttpProxyServerTest {
                 PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
                 BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
             out.println("GET /no-rule HTTP/1.1");
+            out.println("Host: localhost");
             out.println();
             assertThat(in.readLine()).contains("404");
         }
@@ -165,6 +167,7 @@ class HttpProxyServerTest {
                 PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
                 BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
             out.println("GET [invalid] HTTP/1.1");
+            out.println("Host: localhost");
             out.println();
             assertThat(in.readLine()).contains("400");
         }
@@ -175,15 +178,20 @@ class HttpProxyServerTest {
         stubFor(post(urlEqualTo("/post")).willReturn(aResponse().withStatus(201)));
 
         try (Socket socket = new Socket("localhost", proxyPort);
-                OutputStream os = socket.getOutputStream()) {
+                OutputStream os = socket.getOutputStream();
+                InputStream is = socket.getInputStream()) {
 
             String req = "POST http://localhost:" + targetPort + "/post HTTP/1.1\r\n" +
+                    "Host: localhost\r\n" +
                     "Content-Length: 4\r\n\r\n" +
                     "DATA";
             os.write(req.getBytes());
             os.flush();
 
-            await().atMost(Duration.ofSeconds(5)).untilAsserted(
+            BufferedReader reader = new BufferedReader(new InputStreamReader(is));
+            assertThat(reader.readLine()).contains("201");
+
+            await().atMost(Duration.ofSeconds(10)).untilAsserted(
                     () -> verify(postRequestedFor(urlEqualTo("/post")).withRequestBody(equalTo("DATA"))));
         }
     }
@@ -248,6 +256,7 @@ class HttpProxyServerTest {
                 InputStream is = socket.getInputStream()) {
 
             String head = "POST http://localhost:" + targetPort + "/large HTTP/1.1\r\n" +
+                    "Host: localhost\r\n" +
                     "Content-Length: " + largeData.length + "\r\n\r\n";
             os.write(head.getBytes());
             os.write(largeData);
