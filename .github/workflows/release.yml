@@ -75,7 +75,9 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: yuubin-proxy-${{ matrix.os }}
-          path: target/yuubin-proxy-*
+          path: |
+            target/yuubin-proxy-${{ matrix.os }}
+            target/yuubin-proxy-${{ matrix.os }}.exe
 
   # Create the GitHub Release, attaching both fat JARs and native binaries
   release-github:
@@ -100,7 +102,7 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           path: target/native-binaries
-          pattern: yuubin-proxy-*
+          pattern: yuubin-proxy-*-latest*
           merge-multiple: true
           
       - name: Create GitHub Release
