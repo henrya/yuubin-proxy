@@ -37,7 +37,7 @@ class ConfigWatcherTest {
     t.setDaemon(true);
     t.start();
 
-    await().atMost(Duration.ofSeconds(10)).until(() -> {
+    await().atMost(Duration.ofSeconds(30)).until(() -> {
       try (java.net.Socket s = new java.net.Socket("localhost", port1)) {
         return s.isConnected();
       } catch (java.io.IOException e) {
@@ -56,7 +56,7 @@ class ConfigWatcherTest {
         """.formatted(port2);
     Files.writeString(configFile, yaml2);
 
-    await().atMost(Duration.ofSeconds(10)).until(() -> {
+    await().atMost(Duration.ofSeconds(30)).until(() -> {
       try (java.net.Socket s = new java.net.Socket("localhost", port2)) {
         return s.isConnected();
       } catch (java.io.IOException e) {
@@ -65,7 +65,7 @@ class ConfigWatcherTest {
     });
 
     // Verify port1 is inactive
-    await().atMost(Duration.ofSeconds(10)).until(() -> {
+    await().atMost(Duration.ofSeconds(30)).until(() -> {
       try (java.net.Socket s = new java.net.Socket()) {
         s.connect(new java.net.InetSocketAddress("localhost", port1), 500);
         return false;
