@@ -157,7 +157,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.2.5</version>
+                <version>3.5.5</version>
                 <configuration>
                     <argLine>@{argLine} -XX:+EnableDynamicAgentLoading -Dyuubin.no-shutdown-hook=true -Dyuubin.no-command-listener=true</argLine>
                 </configuration>
