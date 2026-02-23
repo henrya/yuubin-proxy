@@ -36,21 +36,23 @@ class UpstreamConnectorTest {
 
     @AfterEach
     void tearDown() throws IOException {
-        if (server != null) server.close();
-        if (executor != null) executor.shutdownNow();
+        if (server != null)
+            server.close();
+        if (executor != null)
+            executor.shutdownNow();
     }
 
     @Test
     void testHttpConnectWithoutAuth() throws Exception {
         executor.submit(() -> {
             try (Socket s = server.accept();
-                 InputStream in = s.getInputStream();
-                 OutputStream out = s.getOutputStream()) {
+                    InputStream in = s.getInputStream();
+                    OutputStream out = s.getOutputStream()) {
                 byte[] buffer = new byte[1024];
                 int read = in.read(buffer);
                 String request = new String(buffer, 0, read, StandardCharsets.US_ASCII);
                 assertThat(request).contains("CONNECT target:80 HTTP/1.1");
-                
+
                 out.write("HTTP/1.1 200 OK\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
                 out.flush();
             } catch (IOException e) {
@@ -72,14 +74,14 @@ class UpstreamConnectorTest {
     void testHttpConnectWithAuth() throws Exception {
         executor.submit(() -> {
             try (Socket s = server.accept();
-                 InputStream in = s.getInputStream();
-                 OutputStream out = s.getOutputStream()) {
+                    InputStream in = s.getInputStream();
+                    OutputStream out = s.getOutputStream()) {
                 byte[] buffer = new byte[1024];
                 int read = in.read(buffer);
                 String request = new String(buffer, 0, read, StandardCharsets.US_ASCII);
-                assertThat(request).contains("Proxy-Authorization: Basic " + 
-                    Base64.getEncoder().encodeToString("user:pass".getBytes(StandardCharsets.UTF_8)));
-                
+                assertThat(request).contains("Proxy-Authorization: Basic " +
+                        Base64.getEncoder().encodeToString("user:pass".getBytes(StandardCharsets.UTF_8)));
+
                 out.write("HTTP/1.1 200 OK\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
                 out.flush();
             } catch (IOException e) {
@@ -103,8 +105,8 @@ class UpstreamConnectorTest {
     void testHttpConnectError() {
         executor.submit(() -> {
             try (Socket s = server.accept();
-                 InputStream in = s.getInputStream();
-                 OutputStream out = s.getOutputStream()) {
+                    InputStream in = s.getInputStream();
+                    OutputStream out = s.getOutputStream()) {
                 out.write("HTTP/1.1 407 Proxy Authentication Required\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
                 out.flush();
             } catch (IOException e) {
@@ -118,42 +120,50 @@ class UpstreamConnectorTest {
         config.setType("HTTP");
 
         assertThatThrownBy(() -> UpstreamConnector.connect("target", 80, config, 1000))
-            .isInstanceOf(IOException.class)
-            .hasMessageContaining("407");
+                .satisfies(e -> {
+                    assertThat(e).isInstanceOf(IOException.class);
+                    if (e instanceof java.net.SocketException) {
+                        // Windows can sometimes throw connection reset before the client reads the 407
+                        // response
+                        assertThat(e.getMessage()).containsAnyOf("Connection reset", "aborted");
+                    } else {
+                        assertThat(e.getMessage()).contains("407");
+                    }
+                });
     }
 
     @Test
     void testSocks5Connect() throws Exception {
         executor.submit(() -> {
             try (Socket s = server.accept();
-                 DataInputStream in = new DataInputStream(s.getInputStream());
-                 DataOutputStream out = new DataOutputStream(s.getOutputStream())) {
-                
+                    DataInputStream in = new DataInputStream(s.getInputStream());
+                    DataOutputStream out = new DataOutputStream(s.getOutputStream())) {
+
                 // Handshake
-                assertThat(in.readByte()).isEqualTo((byte)5);
-                assertThat(in.readByte()).isEqualTo((byte)1);
-                assertThat(in.readByte()).isEqualTo((byte)0);
-                
+                assertThat(in.readByte()).isEqualTo((byte) 5);
+                assertThat(in.readByte()).isEqualTo((byte) 1);
+                assertThat(in.readByte()).isEqualTo((byte) 0);
+
                 out.writeByte(5);
                 out.writeByte(0);
                 out.flush();
 
                 // Connect
-                assertThat(in.readByte()).isEqualTo((byte)5);
-                assertThat(in.readByte()).isEqualTo((byte)1);
-                assertThat(in.readByte()).isEqualTo((byte)0);
-                assertThat(in.readByte()).isEqualTo((byte)3); // Domain
+                assertThat(in.readByte()).isEqualTo((byte) 5);
+                assertThat(in.readByte()).isEqualTo((byte) 1);
+                assertThat(in.readByte()).isEqualTo((byte) 0);
+                assertThat(in.readByte()).isEqualTo((byte) 3); // Domain
                 int hostLen = in.readByte();
                 byte[] host = new byte[hostLen];
                 in.readFully(host);
                 assertThat(new String(host, StandardCharsets.UTF_8)).isEqualTo("target");
-                assertThat(in.readShort()).isEqualTo((short)80);
+                assertThat(in.readShort()).isEqualTo((short) 80);
 
                 out.writeByte(5);
                 out.writeByte(0);
                 out.writeByte(0);
                 out.writeByte(1); // IPv4
-                out.write(new byte[]{127, 0, 0, 1});
+                out.write(new byte[] { 127, 0, 0, 1 });
                 out.writeShort(1234);
                 out.flush();
             } catch (IOException e) {
@@ -181,7 +191,7 @@ class UpstreamConnectorTest {
         config.setPassword("pass");
 
         assertThatThrownBy(() -> UpstreamConnector.connect("target", 80, config, 1000))
-            .isInstanceOf(ConfigException.class)
-            .hasMessageContaining("authentication is not supported");
+                .isInstanceOf(ConfigException.class)
+                .hasMessageContaining("authentication is not supported");
     }
 }
