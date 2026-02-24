@@ -105,6 +105,8 @@ logging:
   # %m = HTTP Method, %q = Query String, %r = Request path
   format: '%h %l %u %t "%m %r%q" %>s %b'
   logResponse: false
+  fileEnabled: true
+  filePath: "/var/log/yuubin-proxy"
 ```
 
 ### Kubernetes Integration

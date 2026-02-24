@@ -10,6 +10,7 @@ import com.yuubin.proxy.core.services.LoggingService;
 import com.yuubin.proxy.core.services.MetricsService;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
+import org.yaml.snakeyaml.error.YAMLException;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -119,6 +120,9 @@ public class YuubinProxyApplication implements Callable<Integer> {
 
             shutdownLatch.await();
             return 0;
+        } catch (ConfigException e) {
+            log.error("Configuration Error: {}", e.getMessage());
+            return 1;
         } catch (ProxyException e) {
             log.error("Fatal proxy error: {}", e.getMessage());
             return 1;
@@ -378,6 +382,8 @@ public class YuubinProxyApplication implements Callable<Integer> {
         if (file.exists()) {
             try (InputStream is = new FileInputStream(file)) {
                 return yaml.load(is);
+            } catch (YAMLException e) {
+                throw new ConfigException("Invalid YAML in " + path + ": " + e.getMessage());
             } catch (IOException e) {
                 throw new ConfigException("Error reading config file: " + path, e);
             }
@@ -397,6 +403,8 @@ public class YuubinProxyApplication implements Callable<Integer> {
             if (is != null) {
                 return yaml.load(is);
             }
+        } catch (YAMLException e) {
+            throw new ConfigException("Invalid YAML in classpath resource " + path + ": " + e.getMessage());
         } catch (IOException e) {
             log.debug("Classpath resource lookup failed for {}", path);
         }

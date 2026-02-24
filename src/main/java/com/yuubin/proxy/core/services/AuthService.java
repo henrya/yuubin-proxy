@@ -23,6 +23,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
+import org.yaml.snakeyaml.error.YAMLException;
 
 /**
  * Service for managing proxy user authentication.
@@ -157,6 +158,8 @@ public class AuthService {
                 }
             }
             log.info("Loaded users from YAML: {}", pathStr);
+        } catch (YAMLException e) {
+            throw new ConfigException("Invalid YAML syntax in users file " + pathStr + ": " + e.getMessage());
         } catch (IOException e) {
             throw new AuthException("Failed to read user credentials from " + pathStr, e);
         } catch (Exception e) {

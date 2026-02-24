@@ -23,8 +23,8 @@ admin:
 # Logging Configuration
 # ------------------------------------------------------------------------
 logging:
-  level: INFO
-  directory: "/var/log/yuubin-proxy"
+  fileEnabled: true
+  filePath: "/var/log/yuubin-proxy"
   # Standard combined log format (analogous to Nginx/Apache)
   # %h = Client IP, %l = Identity, %u = User, %t = Time, %m = Method, %r = Path, %q = Query, %s = Status, %b = Bytes
   format: '%h %l %u %t "%m %r%q" %>s %b'

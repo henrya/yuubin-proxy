@@ -126,16 +126,21 @@ class AuthServiceTest {
     }
 
     @Test
-    void reload_withMalformedYaml_skipsInvalidUsers() throws Exception {
+    void reload_withMalformedYaml_throwsConfigException() throws Exception {
         java.nio.file.Path tempFile = java.nio.file.Files.createTempFile("users-bad", ".yml");
+        // Inject fatal YAML structural errors (e.g., duplicated exact keys, bad
+        // indents, broken arrays)
         java.nio.file.Files.writeString(tempFile,
-                "users:\n  - username: valid\n    password: pass\n  - username: only-user\n");
+                "users:\n" +
+                        "  - username: valid\n" +
+                        "  - [broken_yaml_array\n" +
+                        "  wrong_indentation");
 
         properties.getAuth().setUsersPath(tempFile.toAbsolutePath().toString());
-        authService.reload();
 
-        assertThat(authService.userExists("valid")).isTrue();
-        assertThat(authService.userExists("only-user")).isFalse();
+        assertThatCode(() -> authService.reload())
+                .isInstanceOf(com.yuubin.proxy.core.exceptions.ConfigException.class)
+                .hasMessageContaining("Invalid YAML syntax in users file");
 
         java.nio.file.Files.deleteIfExists(tempFile);
     }
