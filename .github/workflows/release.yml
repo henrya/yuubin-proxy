@@ -105,6 +105,24 @@ jobs:
           pattern: yuubin-proxy-*-latest*
           merge-multiple: true
           
+      - name: Zip Mac and Windows Binaries
+        run: |
+          cd target/native-binaries
+          # Guarantee executable permissions are preserved in the zip archive
+          chmod +x yuubin-proxy-macos-latest yuubin-proxy-windows-latest.exe
+          zip yuubin-proxy-macos-latest.zip yuubin-proxy-macos-latest
+          zip yuubin-proxy-windows-latest.zip yuubin-proxy-windows-latest.exe
+          
+      - name: Package DEB and RPM
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          export PATH=$PATH:$(go env GOPATH)/bin
+          nfpm pkg --config packaging/nfpm.yaml --packager deb --target target/
+          nfpm pkg --config packaging/nfpm.yaml --packager rpm --target target/
+        env:
+          # Extract version from GitHub ref. Strip trailing 'v'
+          VERSION: ${{ github.ref_name }}
+          
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -112,4 +130,6 @@ jobs:
           files: |
             target/*-dist.tar.gz
             target/*-dist.zip
-            target/native-binaries/*
+            target/*.deb
+            target/*.rpm
+            target/native-binaries/*.zip

@@ -1,26 +1,32 @@
-# Stage 1: Build
-FROM maven:3.9.6-eclipse-temurin-21-alpine AS build
-WORKDIR /app
-COPY pom.xml .
-COPY checkstyle.xml .
-COPY src ./src
-RUN mvn clean package -DskipTests
-
-# Stage 2: Runtime
 FROM eclipse-temurin:21-jre-alpine
-WORKDIR /app
 
-# Run as non-root user for security
+# Metadata
+LABEL description="Yuubin High Performance Proxy Server"
+
+# Hardening: Run as a restricted non-root system user
 RUN addgroup -S yuubin && adduser -S yuubin -G yuubin
+
+# Set up enterprise directories and set correct ownership
+RUN mkdir -p /etc/yuubin-proxy /var/log/yuubin-proxy \
+    && chown -R yuubin:yuubin /etc/yuubin-proxy /var/log/yuubin-proxy
+
 USER yuubin
 
-COPY --from=build /app/target/yuubin-proxy-1.0.0.jar yuubin-proxy.jar
+WORKDIR /app
 
-# Default config location
-ENV CONFIG_FILE=/app/config/application.yml
+# The build context must be the root of the project to copy the compiled jar
+# Note: You MUST build the project locally (mvn clean package) before running docker build!
+ARG VERSION=1.0.0
+COPY target/yuubin-proxy-${VERSION}.jar yuubin-proxy.jar
 
-# Expose common proxy ports
-EXPOSE 8080 1080 1081
+# Copy the Enterprise Apache-tier default config
+COPY packaging/conf/application.yml /etc/yuubin-proxy/application.yml
+
+# Environment variable pointing to the default configuration
+ENV CONFIG_FILE=/etc/yuubin-proxy/application.yml
+
+# Expose HTTP, SOCKS5, SOCKS4, and Prometheus Admin ports
+EXPOSE 8080 1080 1081 9090
 
 ENTRYPOINT ["java", "-jar", "yuubin-proxy.jar"]
-CMD ["--config", "/app/config/application.yml"]
+CMD ["--config", "/etc/yuubin-proxy/application.yml"]

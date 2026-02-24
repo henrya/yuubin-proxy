@@ -1,0 +1,55 @@
+# Yuubin Proxy Systemd Service
+[Unit]
+Description=Yuubin High Performance Cross-Platform Proxy Server
+Documentation=https://github.com/henrya/yuubin-proxy
+After=network-online.target
+Wants=network-online.target systemd-networkd-wait-online.service
+
+[Service]
+# Service execution type (simple is the default, native binary runs in foreground thread)
+Type=simple
+
+# The executable path and default argument config location
+ExecStart=/usr/bin/yuubin-proxy --config /etc/yuubin-proxy/application.yml
+
+# Graceful Reload (SIGUSR1 or similar if the app supports it, currently using standard restart)
+# ExecReload=/bin/kill -HUP $MAINPID
+
+# Graceful termination (15s before SIGKILL)
+TimeoutStopSec=15
+KillMode=mixed
+
+# Single-Instance Lock Strategy (Nginx/Apache parity)
+# This creates /run/yuubin-proxy/ on start, removes it on stop, and locks the singleton PID.
+RuntimeDirectory=yuubin-proxy
+PIDFile=/run/yuubin-proxy/yuubin-proxy.pid
+# Note: systemd's Type=simple natively tracks MainPID, but specifying PIDFile 
+# adds a strict filesystem lock preventing concurrent 'systemctl start' runs.
+
+# Restart policy for unexpected crashes
+Restart=on-failure
+RestartSec=3s
+
+# User and Group Configuration
+# Note: Creating a secure non-root user `yuubin` is recommended for security.
+User=yuubin
+Group=yuubin
+
+# Capability requirements (Allows non-root user 'yuubin' to bind to ports < 1024, like 80/443)
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+# Harden security settings (disallow privilege escalation outside capabilities)
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Limit open file descriptors to handle high concurrent proxy connections
+LimitNOFILE=655350
+
+[Install]
+WantedBy=multi-user.target

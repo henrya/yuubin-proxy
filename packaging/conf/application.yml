@@ -1,0 +1,66 @@
+# ========================================================================
+# Yuubin Proxy Configuration File
+#
+# This file is the main configuration file for the Yuubin Proxy Server.
+# It is designed to act as a secure, high-performance default template
+# similar to standard enterprise proxies (e.g., Nginx, Apache).
+# ========================================================================
+
+# ------------------------------------------------------------------------
+# Global Administrative Settings
+# ------------------------------------------------------------------------
+admin:
+  enabled: true
+  port: 9090 # Expose health checks (/health) and Prometheus metrics (/metrics)
+
+# ------------------------------------------------------------------------
+# Global Security & Blacklists
+# ------------------------------------------------------------------------
+# globalBlacklist:
+#   - 192.168.1.100
+
+# ------------------------------------------------------------------------
+# Logging Configuration
+# ------------------------------------------------------------------------
+logging:
+  level: INFO
+  directory: "/var/log/yuubin-proxy"
+  # Standard combined log format (analogous to Nginx/Apache)
+  # %h = Client IP, %l = Identity, %u = User, %t = Time, %m = Method, %r = Path, %q = Query, %s = Status, %b = Bytes
+  format: '%h %l %u %t "%m %r%q" %>s %b'
+  logResponse: false
+
+# ------------------------------------------------------------------------
+# Proxy Server Definitions
+# ------------------------------------------------------------------------
+proxies:
+  # ======================================================================
+  # Default HTTP Proxy (Forward/Reverse)
+  # ======================================================================
+  - name: "default-http"
+    type: HTTP
+    port: 8080
+    timeout: 60000
+    maxRedirects: 0
+    authEnabled: false
+    # Add your routing and load balancing rules underneath.
+    # By default, without rules, it behaves as a generic forward proxy (if requests provide full URIs).
+    # 
+    # Example Reverse Proxy Rule (API Gateway):
+    # rules:
+    #   - host: "api.example.com"
+    #     path: "/v1"
+    #     targets:
+    #       - "http://127.0.0.1:3000"
+    #       - "http://127.0.0.1:3001"
+    #     loadBalancing: ROUND_ROBIN
+
+  # ======================================================================
+  # Default SOCKS5 Proxy
+  # Disabled by default for security. Uncomment to enable.
+  # ======================================================================
+  # - name: "default-socks5"
+  #   type: SOCKS5
+  #   port: 1080
+  #   authEnabled: false
+  #   timeout: 30000

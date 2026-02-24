@@ -1,0 +1,48 @@
+# nFPM Configuration File for .deb and .rpm Generation
+# https://nfpm.goreleaser.com/configuration/
+
+name: "yuubin-proxy"
+arch: "amd64"
+platform: "linux"
+version: "${VERSION}" # This will be interpolated in the GH Actions workflow via env var
+section: "net"
+priority: "optional"
+maintainer: "Yuubin Team <hello@yuubin.io>"
+description: "A high performance, cross-platform proxy server built in Java/GraalVM."
+vendor: "Yuubin"
+homepage: "https://github.com/henrya/yuubin-proxy"
+license: "MIT"
+
+
+
+contents:
+  # The actual parsed out native binary
+  - src: target/native-binaries/yuubin-proxy-ubuntu-latest
+    dst: /usr/bin/yuubin-proxy
+    file_info:
+      mode: 0755
+      owner: root
+      group: root
+
+  # The initial default configuration file
+  - src: packaging/conf/application.yml
+    dst: /etc/yuubin-proxy/application.yml
+    type: config
+    file_info:
+      mode: 0644
+      owner: root
+      group: root
+
+  # The Systemd Service
+  - src: packaging/yuubin-proxy.service
+    dst: /etc/systemd/system/yuubin-proxy.service
+    file_info:
+      mode: 0644
+      owner: root
+      group: root
+
+scripts:
+  # Post Actions for user creation and directory permission setups
+  postinstall: ./packaging/postinstall.sh
+  preremove: ./packaging/preremove.sh
+  postremove: ./packaging/postremove.sh

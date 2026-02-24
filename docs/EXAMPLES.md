@@ -29,7 +29,17 @@ This folder contains documentation for various configuration scenarios. The YAML
 ---
 
 ### How to use these examples
-To start the proxy with a specific example:
+
+**For Linux Native Packages (.deb / .rpm):**
+When installed via a package manager, the primary configuration lives at `/etc/yuubin-proxy/application.yml`. To test an example, simply copy it over the existing file:
+```bash
+sudo cp docs/examples/api-gateway-routing.yml /etc/yuubin-proxy/application.yml
+```
+
+*(Because the native service employs Graceful Live Reload, it will automatically detect the new `application.yml` file modification and seamlessly reload the proxy servers within seconds without dropping any active connections—no `systemctl restart` required!)*
+
+**For Standard Archives (.tar.gz / .zip):**
+To start the Java archive proxy with a specific example file:
 ```bash
 ./bin/run.sh --config docs/examples/api-gateway-routing.yml
 ```

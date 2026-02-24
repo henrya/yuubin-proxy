@@ -3,13 +3,19 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        # Override this argument if building a different package version
+        - VERSION=1.0.0
     image: yuubin-proxy:latest
     container_name: yuubin-proxy
     ports:
-      - "8080:8080"  # HTTP
-      - "1080:1080"  # SOCKS5
-      - "1081:1081"  # SOCKS4
+      - "8080:8080"  # HTTP proxy
+      - "1080:1080"  # SOCKS5 proxy
+      - "1081:1081"  # SOCKS4 proxy
+      - "9090:9090"  # Admin/Prometheus health
     volumes:
-      - ../src/main/resources/application.yml:/app/config/application.yml:ro
-      - ../users.yml:/app/config/users.yml:ro
+      # Mount the configuration into the enterprise container file system
+      - ../packaging/conf/application.yml:/etc/yuubin-proxy/application.yml:ro
+      # Uncomment to deploy users list if using authentication
+      # - ../packaging/conf/users.yml:/etc/yuubin-proxy/users.yml:ro
     restart: unless-stopped

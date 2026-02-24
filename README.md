@@ -5,7 +5,7 @@
 [![Release](https://github.com/henrya/yuubin-proxy/workflows/Release/badge.svg)](https://github.com/henrya/yuubin-proxy/actions/workflows/release.yml)
 
 Yuubin Proxy is a high-performance, lightweight multi-protocol proxy server written in Java. 
-It leverages **Virtual Threads (Project Loom)** to handle thousands of concurrent connections using a simple, readable "thread-per-connection" model.
+It leverages **Virtual Threads (Project Loom)** to handle concurrent connections using a "thread-per-connection" model.
 
 ## Motivation
 
@@ -116,10 +116,37 @@ If needed, for cloud-native deployments, Yuubin Proxy supports loading user cred
 
 ## Distribution & Deployment
 
-### 1. Standard Archives (.tar.gz / .zip)
-The recommended way to deploy on traditional VMs or bare metal. These archives are automatically built and attached to every tagged release (`v*`) on GitHub via GitHub Actions.
+### 1. Linux Native Packages (.deb / .rpm) - Recommended
+For Linux users, the fastest and most integrated way to run Yuubin Proxy is via our standalone native packages. These do not require Java to be installed to run!
 
-**Build:**
+**Installation:**
+Download the `.deb` (Ubuntu/Debian) or `.rpm` (RHEL/CentOS) from the GitHub Releases page:
+```bash
+sudo dpkg -i yuubin-proxy-*.deb
+# OR
+sudo rpm -i yuubin-proxy-*.rpm
+```
+
+**Service Management:**
+Upon installation, a secure `yuubin` system user is created, and the service is automatically registered with `systemd`.
+
+*   **Config Location:** Edit your rules at `/etc/yuubin-proxy/application.yml`
+*   **Log Location:** `/var/log/yuubin-proxy/`
+*   **Start/Stop:** `sudo systemctl start yuubin-proxy`
+*   **Check Status:** `sudo systemctl status yuubin-proxy`
+
+**Reloading Configuration:**
+Yuubin Proxy supports **Graceful Live Reload**. If you modify `/etc/yuubin-proxy/application.yml` while the systemd service is actively running, the proxy will detect the file system change and automatically hot-reload the new rules within a few seconds without dropping active connections. 
+
+You only need to restart the service if you are upgrading the binary or need to force a hard JVM reboot:
+```bash
+sudo systemctl restart yuubin-proxy
+```
+
+### 2. Standard Archives (.tar.gz / .zip)
+The recommended way to deploy on traditional operating systems (Windows, macOS) or platforms requiring the JVM. These archives require Java 21+ and are attached to every tagged release.
+
+**Build from Source:**
 ```bash
 mvn clean package
 ```
@@ -153,15 +180,19 @@ Yuubin Proxy is available as a multi-arch Docker image (amd64/arm64).
 
 ```bash
 docker run -p 8080:8080 -p 1080:1080 \
-  -v $(pwd)/conf/application.yml:/app/config/application.yml \
+  -v $(pwd)/packaging/conf/application.yml:/etc/yuubin-proxy/application.yml \
   ghcr.io/henrya/yuubin-proxy:latest
 ```
 
-### 3. Docker Compose
-Use the provided `docker-compose.yml` for a managed deployment:
+### 3. Docker Compose (Build from Source)
+To build and run Yuubin Proxy locally using the provided `docker-compose.yml`, you must compile the Java artifact first:
 
 ```bash
-docker-compose -f docker/docker-compose.yml up -d
+# 1. Compile the proxy executable natively
+mvn clean package
+
+# 2. Build the Alpine Docker image and start the container
+docker-compose -f docker/docker-compose.yml up -d --build
 ```
 
 ### 4. GraalVM Native Image (Optional)
