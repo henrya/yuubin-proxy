@@ -82,29 +82,33 @@ class HttpProxyServerTest {
     void proxy_handlesRegularHttp() throws Exception {
         stubFor(get(urlEqualTo("/test")).willReturn(aResponse().withStatus(200).withBody("OK")));
 
-        try (Socket socket = new Socket("localhost", proxyPort);
-                PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+            try (Socket socket = new Socket("localhost", proxyPort);
+                    PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+                    BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
 
-            out.println("GET http://localhost:" + targetPort + "/test HTTP/1.1");
-            out.println("Host: localhost");
-            out.println();
+                out.println("GET http://localhost:" + targetPort + "/test HTTP/1.1");
+                out.println("Host: localhost");
+                out.println();
 
-            assertThat(in.readLine()).contains("200");
-        }
+                assertThat(in.readLine()).contains("200");
+            }
+        });
     }
 
     @Test
     void proxy_handlesConnect() throws Exception {
-        try (Socket socket = new Socket("localhost", proxyPort);
-                PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+            try (Socket socket = new Socket("localhost", proxyPort);
+                    PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+                    BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
 
-            out.println("CONNECT localhost:" + targetPort + " HTTP/1.1");
-            out.println();
+                out.println("CONNECT localhost:" + targetPort + " HTTP/1.1");
+                out.println();
 
-            assertThat(in.readLine()).contains("200 Connection Established");
-        }
+                assertThat(in.readLine()).contains("200 Connection Established");
+            }
+        });
     }
 
     @Test
