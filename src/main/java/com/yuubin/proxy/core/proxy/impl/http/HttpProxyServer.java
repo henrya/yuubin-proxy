@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -69,6 +70,7 @@ public class HttpProxyServer extends AbstractProxyServer {
     private static final String LOCATION_HEADER = "Location";
     private static final String BAD_GATEWAY_MSG = "Bad Gateway";
     private static final String INTERNAL_ERROR_MSG = "Internal Server Error";
+    private static final String NOT_FOUND_MSG = "Not Found";
     private static final String PATH_SEP = "/";
 
     /** Headers that should not be forwarded from client to backend. */
@@ -107,7 +109,7 @@ public class HttpProxyServer extends AbstractProxyServer {
                 Map.entry(204, "No Content"), Map.entry(301, "Moved Permanently"),
                 Map.entry(302, "Found"), Map.entry(304, "Not Modified"),
                 Map.entry(400, "Bad Request"), Map.entry(401, "Unauthorized"),
-                Map.entry(403, "Forbidden"), Map.entry(404, "Not Found"),
+                Map.entry(403, "Forbidden"), Map.entry(404, NOT_FOUND_MSG),
                 Map.entry(405, "Method Not Allowed"), Map.entry(407, "Proxy Authentication Required"),
                 Map.entry(408, "Request Timeout"), Map.entry(429, "Too Many Requests"),
                 Map.entry(500, INTERNAL_ERROR_MSG), Map.entry(502, BAD_GATEWAY_MSG),
@@ -115,6 +117,7 @@ public class HttpProxyServer extends AbstractProxyServer {
     }
 
     private final HttpClient httpClient;
+    private final Map<Rule, HttpClient> ruleHttpClients = new ConcurrentHashMap<>();
     private final List<HttpFilter> filters;
     private final Counter requestsTotal;
     private final Counter bytesSent;
@@ -143,21 +146,27 @@ public class HttpProxyServer extends AbstractProxyServer {
             builder.connectTimeout(Duration.ofMillis(config.getTimeout()));
         }
 
-        // Configure Upstream Proxy Chaining
-        UpstreamProxyConfig upstream = config.getUpstreamProxy();
-        if (upstream != null) {
-            builder.proxy(ProxySelector.of(new InetSocketAddress(upstream.getHost(), upstream.getPort())));
-            if (upstream.getUsername() != null && upstream.getPassword() != null) {
-                builder.authenticator(new Authenticator() {
-                    @Override
-                    protected PasswordAuthentication getPasswordAuthentication() {
-                        return new PasswordAuthentication(upstream.getUsername(), upstream.getPassword().toCharArray());
+        // Configure Default Upstream Proxy Chaining
+        configureUpstreamProxy(builder, config.getUpstreamProxy());
+        this.httpClient = builder.build();
+
+        // Configure per-rule Upstream Proxy Chaining
+        if (config.getRules() != null) {
+            for (Rule rule : config.getRules()) {
+                if (rule.getUpstreamProxy() != null) {
+                    HttpClient.Builder ruleBuilder = HttpClient.newBuilder()
+                            .executor(Executors.newVirtualThreadPerTaskExecutor())
+                            .followRedirects(HttpClient.Redirect.NEVER)
+                            .version(HttpClient.Version.HTTP_1_1);
+                    if (config.getTimeout() > 0) {
+                        ruleBuilder.connectTimeout(Duration.ofMillis(config.getTimeout()));
                     }
-                });
+                    configureUpstreamProxy(ruleBuilder, rule.getUpstreamProxy());
+                    ruleHttpClients.put(rule, ruleBuilder.build());
+                }
             }
         }
 
-        this.httpClient = builder.build();
         this.filters = List.of(new AuthFilter(config, authService), new LoggingFilter(loggingService));
 
         String configName = config.getName() != null ? config.getName() : "unnamed";
@@ -178,6 +187,20 @@ public class HttpProxyServer extends AbstractProxyServer {
         this.healthCheckExecutor = Executors.newSingleThreadScheduledExecutor(
                 Thread.ofPlatform().daemon().name("health-check-" + configName).factory());
         startHealthChecks();
+    }
+
+    private void configureUpstreamProxy(HttpClient.Builder builder, UpstreamProxyConfig upstream) {
+        if (upstream != null) {
+            builder.proxy(ProxySelector.of(new InetSocketAddress(upstream.getHost(), upstream.getPort())));
+            if (upstream.getUsername() != null && upstream.getPassword() != null) {
+                builder.authenticator(new Authenticator() {
+                    @Override
+                    protected PasswordAuthentication getPasswordAuthentication() {
+                        return new PasswordAuthentication(upstream.getUsername(), upstream.getPassword().toCharArray());
+                    }
+                });
+            }
+        }
     }
 
     private void startHealthChecks() {
@@ -243,6 +266,14 @@ public class HttpProxyServer extends AbstractProxyServer {
                 log.debug("Error shutting down HTTP client: {}", e.getMessage());
             }
         }
+        for (HttpClient client : ruleHttpClients.values()) {
+            try {
+                client.shutdownNow();
+            } catch (Exception e) {
+                log.debug("Error shutting down rule HTTP client: {}", e.getMessage());
+            }
+        }
+        ruleHttpClients.clear();
         if (registry != null) {
             registry.remove(requestsTotal);
             registry.remove(bytesSent);
@@ -292,7 +323,9 @@ public class HttpProxyServer extends AbstractProxyServer {
             port = "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
         }
 
-        try (Socket target = connectToTarget(host, port)) {
+        try (Socket target = connectToTarget(host, port,
+                rule != null && rule.getUpstreamProxy() != null ? rule.getUpstreamProxy()
+                        : config.getUpstreamProxy())) {
             target.setTcpNoDelay(true);
             OutputStream targetOut = target.getOutputStream();
             InputStream targetIn = new BufferedInputStream(target.getInputStream());
@@ -350,7 +383,7 @@ public class HttpProxyServer extends AbstractProxyServer {
         }
 
         try {
-            Socket target = connectToTarget(host, port);
+            Socket target = connectToTarget(host, port, config.getUpstreamProxy());
             target.setTcpNoDelay(true);
             clientOut.write(("HTTP/1.1 200 Connection Established\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
             clientOut.flush();
@@ -419,33 +452,57 @@ public class HttpProxyServer extends AbstractProxyServer {
     private String resolveTargetUrl(RequestContext context, Rule rule, OutputStream clientOut) throws IOException {
         URI uri = context.getUri();
 
-        if (rule != null) {
-            if (!rule.allowRequest(context.getRemoteAddr())) {
-                writeErrorResponse(clientOut, HTTP_TOO_MANY_REQUESTS, "Too Many Requests");
-                return null;
-            }
-
-            String targetBase = rule.getTarget(context.getRemoteAddr());
-            if (targetBase == null) {
-                writeErrorResponse(clientOut, HTTP_BAD_GATEWAY, BAD_GATEWAY_MSG);
-                return null;
-            }
-            if (targetBase.endsWith("/")) {
-                targetBase = targetBase.substring(0, targetBase.length() - 1);
-            }
-            String subPath = uri.getPath().substring(rule.getPath().length());
-            if (!subPath.startsWith(PATH_SEP)) {
-                subPath = PATH_SEP + subPath;
-            }
-            String targetUrl = targetBase + subPath;
-            return uri.getQuery() != null ? targetUrl + "?" + uri.getQuery() : targetUrl;
-        } else {
-            if (config.getRules() != null && !config.getRules().isEmpty()) {
-                writeErrorResponse(clientOut, HTTP_NOT_FOUND, "Not Found");
-                return null;
-            }
-            return uri.toString();
+        if (rule == null) {
+            return resolveFallbackUrl(uri, clientOut);
         }
+
+        if (!rule.allowRequest(context.getRemoteAddr())) {
+            writeErrorResponse(clientOut, HTTP_TOO_MANY_REQUESTS, "Too Many Requests");
+            return null;
+        }
+
+        String targetBase = rule.getTarget(context.getRemoteAddr());
+        if (targetBase == null) {
+            writeErrorResponse(clientOut, HTTP_BAD_GATEWAY, BAD_GATEWAY_MSG);
+            return null;
+        }
+
+        return buildRuleTargetUrl(uri, rule, targetBase, clientOut);
+    }
+
+    private String resolveFallbackUrl(URI uri, OutputStream clientOut) throws IOException {
+        if (config.getRules() != null && !config.getRules().isEmpty()) {
+            writeErrorResponse(clientOut, HTTP_NOT_FOUND, NOT_FOUND_MSG);
+            return null;
+        }
+        return uri.toString();
+    }
+
+    private String buildRuleTargetUrl(URI uri, Rule rule, String targetBase, OutputStream clientOut)
+            throws IOException {
+        if (targetBase.endsWith("/")) {
+            targetBase = targetBase.substring(0, targetBase.length() - 1);
+        }
+
+        String requestPath = uri.getRawPath();
+        if (requestPath == null || requestPath.isEmpty()) {
+            requestPath = "/";
+        }
+
+        if (!requestPath.startsWith(rule.getPath())) {
+            // If it doesn't match the rule path anymore (e.g., due to absolute URI mismatch
+            // with rule), deny
+            writeErrorResponse(clientOut, HTTP_NOT_FOUND, NOT_FOUND_MSG);
+            return null;
+        }
+
+        String subPath = requestPath.substring(rule.getPath().length());
+        if (!subPath.startsWith(PATH_SEP)) {
+            subPath = PATH_SEP + subPath;
+        }
+
+        String targetUrl = targetBase + subPath;
+        return uri.getQuery() != null ? targetUrl + "?" + uri.getQuery() : targetUrl;
     }
 
     /**
@@ -493,10 +550,14 @@ public class HttpProxyServer extends AbstractProxyServer {
         String currentUrl = targetUrl;
         HttpResponse<InputStream> response = null;
 
+        HttpClient client = matchedRule != null && ruleHttpClients.containsKey(matchedRule)
+                ? ruleHttpClients.get(matchedRule)
+                : httpClient;
+
         while (redirects <= config.getMaxRedirects()) {
             HttpRequest request = buildRequest(method, currentUrl, bodyPublisher, headers, context, matchedRule,
                     redirects);
-            response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
 
             boolean canRedirect = isRedirect(response) && redirects < config.getMaxRedirects();
             String location = canRedirect ? response.headers().firstValue(LOCATION_HEADER).orElse(null) : null;
@@ -682,10 +743,17 @@ public class HttpProxyServer extends AbstractProxyServer {
                         return false;
                     }
                     // Path check
-                    return r.getPath().equals(path)
-                            || (path.startsWith(r.getPath())
-                                    && (r.getPath().equals("/")
-                                            || path.charAt(r.getPath().length()) == '/'));
+                    String rulePath = r.getPath();
+                    if (rulePath.equals(path)) {
+                        return true;
+                    }
+                    if (path.startsWith(rulePath)) {
+                        // e.g. rulePath is "/" -> matches "/chained"
+                        // rulePath is "/chained" -> matches "/chained" and "/chained/"
+                        return rulePath.equals("/") || path.length() == rulePath.length()
+                                || path.charAt(rulePath.length()) == '/';
+                    }
+                    return false;
                 })
                 .findFirst()
                 .orElse(null);

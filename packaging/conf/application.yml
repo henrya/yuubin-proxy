@@ -25,6 +25,10 @@ admin:
 logging:
   fileEnabled: true
   filePath: "/var/log/yuubin-proxy"
+  fileName: "yuubin-proxy.log"
+  rotation: "DAILY"      # Options: DAILY, WEEKLY, MONTHLY, SIZE
+  # maxSize: "100MB"     # Max single file size. Enable if rotation config is SIZE. 
+  maxHistory: 30         # Max number of rotated logs to keep before purging
   # Standard combined log format (analogous to Nginx/Apache)
   # %h = Client IP, %l = Identity, %u = User, %t = Time, %m = Method, %r = Path, %q = Query, %s = Status, %b = Bytes
   format: '%h %l %u %t "%m %r%q" %>s %b'
@@ -43,17 +47,25 @@ proxies:
     timeout: 60000
     maxRedirects: 0
     authEnabled: false
-    # Add your routing and load balancing rules underneath.
-    # By default, without rules, it behaves as a generic forward proxy (if requests provide full URIs).
+    # Routing and load balancing rules
+    # By default, without rules, it behaves as a generic forward proxy (if requests provide absolute URIs).
+    # You can configure individual rules to route or chain upstream to specific proxies.
     # 
     # Example Reverse Proxy Rule (API Gateway):
     # rules:
-    #   - host: "api.example.com"
-    #     path: "/v1"
+    #   - path: "/v1"
     #     targets:
     #       - "http://127.0.0.1:3000"
     #       - "http://127.0.0.1:3001"
     #     loadBalancing: ROUND_ROBIN
+    #
+    # Example Rule with Upstream HTTP Proxy Chaining:
+    #   - path: "/external-api"
+    #     target: "http://api.external.com"
+    #     upstreamProxy:
+    #       host: "corp-proxy.internal"
+    #       port: 3128
+    #       type: HTTP
 
   # ======================================================================
   # Default SOCKS5 Proxy

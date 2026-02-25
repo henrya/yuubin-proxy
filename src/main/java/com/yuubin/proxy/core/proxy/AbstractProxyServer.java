@@ -335,7 +335,19 @@ public abstract class AbstractProxyServer implements ProxyServer {
      * @throws IOException If connection fails.
      */
     protected Socket connectToTarget(String targetHost, int port) throws IOException {
-        UpstreamProxyConfig upstream = config.getUpstreamProxy();
+        return connectToTarget(targetHost, port, config.getUpstreamProxy());
+    }
+
+    /**
+     * Helper to connect to a target host, either directly or via an upstream proxy.
+     * 
+     * @param targetHost Target host name or IP.
+     * @param port       Target port.
+     * @param upstream   The upstream proxy configuration to use.
+     * @return Connected socket.
+     * @throws IOException If connection fails.
+     */
+    protected Socket connectToTarget(String targetHost, int port, UpstreamProxyConfig upstream) throws IOException {
         int timeout = config.getTimeout() > 0 ? config.getTimeout() : 10000;
 
         if (upstream != null) {

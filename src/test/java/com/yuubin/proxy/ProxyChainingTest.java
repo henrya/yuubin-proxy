@@ -35,6 +35,7 @@ class ProxyChainingTest {
     private static LoggingService logSrv;
     private static int upstreamPort;
     private static int downstreamPort;
+    private static int ruleDownstreamPort;
     private static int socksUpstreamPort;
     private static int socksDownstreamPort;
     private static int targetPort;
@@ -44,11 +45,13 @@ class ProxyChainingTest {
         try (ServerSocket s1 = new ServerSocket(0);
                 ServerSocket s2 = new ServerSocket(0);
                 ServerSocket s3 = new ServerSocket(0);
-                ServerSocket s4 = new ServerSocket(0)) {
+                ServerSocket s4 = new ServerSocket(0);
+                ServerSocket s5 = new ServerSocket(0)) {
             upstreamPort = s1.getLocalPort();
             downstreamPort = s2.getLocalPort();
             socksUpstreamPort = s3.getLocalPort();
             socksDownstreamPort = s4.getLocalPort();
+            ruleDownstreamPort = s5.getLocalPort();
         }
 
         wireMock = new WireMockServer(wireMockConfig().dynamicPort());
@@ -57,6 +60,10 @@ class ProxyChainingTest {
 
         wireMock.stubFor(get(urlEqualTo("/chained"))
                 .willReturn(aResponse().withStatus(200).withBody("CHAINED OK")));
+        wireMock.stubFor(get(urlEqualTo("/direct/"))
+                .willReturn(aResponse().withStatus(200).withBody("DIRECT OK")));
+        wireMock.stubFor(get(urlEqualTo("/chainedRule/"))
+                .willReturn(aResponse().withStatus(200).withBody("CHAINED RULE OK")));
 
         YuubinProperties props = new YuubinProperties();
 
@@ -94,7 +101,28 @@ class ProxyChainingTest {
         socksChain.setType("SOCKS5");
         socksDownstream.setUpstreamProxy(socksChain);
 
-        props.setProxies(List.of(upstream, downstream, socksUpstream, socksDownstream));
+        // 3. Rule-level HTTP Chaining
+        ProxyServerConfig ruleDownstream = new ProxyServerConfig();
+        ruleDownstream.setName("ruleDownstream");
+        ruleDownstream.setPort(ruleDownstreamPort);
+        ruleDownstream.setType("HTTP");
+
+        com.yuubin.proxy.entity.Rule directRule = new com.yuubin.proxy.entity.Rule();
+        directRule.setPath("/route-direct");
+        directRule.setTarget("http://localhost:" + targetPort + "/direct");
+
+        com.yuubin.proxy.entity.Rule chainedRule = new com.yuubin.proxy.entity.Rule();
+        chainedRule.setPath("/route-chained");
+        chainedRule.setTarget("http://localhost:" + targetPort + "/chainedRule");
+        UpstreamProxyConfig ruleChain = new UpstreamProxyConfig();
+        ruleChain.setHost("localhost");
+        ruleChain.setPort(upstreamPort);
+        ruleChain.setType("HTTP");
+        chainedRule.setUpstreamProxy(ruleChain);
+
+        ruleDownstream.setRules(List.of(directRule, chainedRule));
+
+        props.setProxies(List.of(upstream, downstream, socksUpstream, socksDownstream, ruleDownstream));
 
         AuthService auth = new AuthService(props);
         logSrv = new LoggingService(props);
@@ -103,16 +131,16 @@ class ProxyChainingTest {
         manager.startServers();
 
         await().atMost(Duration.ofSeconds(10)).until(() -> {
-            boolean[] active = new boolean[4];
-            int[] ports = { upstreamPort, downstreamPort, socksUpstreamPort, socksDownstreamPort };
-            for (int i = 0; i < 4; i++) {
+            boolean[] active = new boolean[5];
+            int[] ports = { upstreamPort, downstreamPort, socksUpstreamPort, socksDownstreamPort, ruleDownstreamPort };
+            for (int i = 0; i < 5; i++) {
                 try (Socket s = new Socket("localhost", ports[i])) {
                     active[i] = s.isConnected();
                 } catch (java.io.IOException e) {
                     active[i] = false;
                 }
             }
-            return active[0] && active[1] && active[2] && active[3];
+            return active[0] && active[1] && active[2] && active[3] && active[4];
         });
     }
 
@@ -189,6 +217,53 @@ class ProxyChainingTest {
             pw.println();
 
             assertThat(br.readLine()).contains("200");
+        }
+    }
+
+    @Test
+    void testRuleLevelChaining() throws Exception {
+        // Direct rule (no upstream proxy)
+        try (Socket s = new Socket("localhost", ruleDownstreamPort);
+                PrintWriter pw = new PrintWriter(s.getOutputStream(), true);
+                BufferedReader br = new BufferedReader(new InputStreamReader(s.getInputStream()))) {
+
+            pw.println("GET http://localhost:" + targetPort + "/route-direct HTTP/1.1");
+            pw.println("Host: localhost");
+            pw.println();
+
+            String line = br.readLine();
+            assertThat(line).contains("200");
+
+            while ((line = br.readLine()) != null && !line.isEmpty()) {
+                // skip headers
+            }
+
+            char[] buffer = new char[1024];
+            int read = br.read(buffer);
+            String body = new String(buffer, 0, read);
+            assertThat(body).contains("DIRECT OK");
+        }
+
+        // Chained rule
+        try (Socket s = new Socket("localhost", ruleDownstreamPort);
+                PrintWriter pw = new PrintWriter(s.getOutputStream(), true);
+                BufferedReader br = new BufferedReader(new InputStreamReader(s.getInputStream()))) {
+
+            pw.println("GET http://localhost:" + targetPort + "/route-chained HTTP/1.1"); // Path is /route-chained
+            pw.println("Host: localhost");
+            pw.println();
+
+            String line = br.readLine();
+            assertThat(line).contains("200");
+
+            while ((line = br.readLine()) != null && !line.isEmpty()) {
+                // skip headers
+            }
+
+            char[] buffer = new char[1024];
+            int read = br.read(buffer);
+            String body = new String(buffer, 0, read);
+            assertThat(body).contains("CHAINED RULE OK");
         }
     }
 }

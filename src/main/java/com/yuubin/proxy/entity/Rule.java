@@ -34,6 +34,9 @@ public class Rule {
     /** Optional custom headers to add to the forwarded request. */
     private Map<String, String> headers;
 
+    /** Upstream proxy to use when this rule matches. */
+    private com.yuubin.proxy.config.UpstreamProxyConfig upstreamProxy;
+
     /**
      * Whether to treat this as a reverse proxy rule.
      * Volatile ensures visibility when configuration reloads update rules in-place
@@ -346,6 +349,15 @@ public class Rule {
         this.headers = headers == null ? null : new HashMap<>(headers);
     }
 
+    public com.yuubin.proxy.config.UpstreamProxyConfig getUpstreamProxy() {
+        return upstreamProxy == null ? null : new com.yuubin.proxy.config.UpstreamProxyConfig(upstreamProxy);
+    }
+
+    public void setUpstreamProxy(com.yuubin.proxy.config.UpstreamProxyConfig upstreamProxy) {
+        this.upstreamProxy = upstreamProxy == null ? null
+                : new com.yuubin.proxy.config.UpstreamProxyConfig(upstreamProxy);
+    }
+
     public boolean isReverse() {
         return reverse;
     }
@@ -375,13 +387,15 @@ public class Rule {
                 Objects.equals(targets, rule.targets) &&
                 Objects.equals(healthCheckPath, rule.healthCheckPath) &&
                 Objects.equals(customLoadBalancer, rule.customLoadBalancer) &&
-                Objects.equals(headers, rule.headers);
+                Objects.equals(headers, rule.headers) &&
+                Objects.equals(upstreamProxy, rule.upstreamProxy);
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(host, path, target, targets, headers, reverse, rateLimit, burst,
-                loadBalancing, healthCheckPath, healthCheckInterval, healthCheckTimeout, customLoadBalancer);
+                loadBalancing, healthCheckPath, healthCheckInterval, healthCheckTimeout, customLoadBalancer,
+                upstreamProxy);
     }
 
     /**

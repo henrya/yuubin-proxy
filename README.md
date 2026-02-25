@@ -40,16 +40,6 @@ Beyond performance, portability is a primary objective. Java allows for seamless
     -   **Kubernetes ConfigMap**: Load credentials from a mounted directory (one file per user).
     -   **Environment Variables**: Inject users via strings like `user1:pass1,user2:pass2`.
 -   **Graceful Live Reload**: Automatically detects changes to `application.yml` and updates proxy settings, starting or stopping servers without an application restart.
--   **Zero Framework Overhead**: Built with plain Java SE. No Spring Boot, no heavy dependencies.
--   **High Quality**: >95% code coverage with a comprehensive suite of unit and integration tests (WireMock).
-
-## Architecture
-
--   **Virtual Thread Per Task**: Maximum concurrency using `Executors.newVirtualThreadPerTaskExecutor()`.
--   **Abstract Lifecycle**: Common server logic is centralized in `AbstractProxyServer`.
--   **Filter Chain**: HTTP proxy uses a modular filter system for Authentication and Logging.
--   **Robust I/O**: Specialized `IOUtils` for bidirectional data relay and stream handling.
--   **Custom Exceptions**: Clear error propagation via a structured `ProxyException` hierarchy.
 
 ## Documentation & Examples
 
@@ -107,6 +97,10 @@ logging:
   logResponse: false
   fileEnabled: true
   filePath: "/var/log/yuubin-proxy"
+  fileName: "yuubin-proxy.log"
+  rotation: "DAILY"      # Options: DAILY, WEEKLY, MONTHLY, SIZE
+  # maxSize: "100MB"     # Max single file size. Enable if rotation config is SIZE. 
+  maxHistory: 30         # Max number of rotated logs to keep before purging
 ```
 
 ### Kubernetes Integration

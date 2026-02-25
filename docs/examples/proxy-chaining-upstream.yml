@@ -11,3 +11,16 @@ proxies:
       type: HTTP
       username: "proxy-user"
       password: "proxy-password"
+
+  - name: rule-level-chained-http
+    port: 8889
+    type: HTTP
+    rules:
+      - path: /direct-route
+        target: http://internal-service:8080
+      - path: /chained-route
+        target: http://external-api:80
+        upstreamProxy:
+          host: specific-proxy.external
+          port: 8080
+          type: HTTP

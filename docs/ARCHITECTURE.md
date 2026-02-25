@@ -135,7 +135,7 @@ Yuubin Proxy is a lightweight, high-performance multi-protocol proxy server impl
 
 ### 6. Support Services
 - **AuthService**: Manages user credentials from YAML, Environment Variables, or mounted directories. Uses constant-time equality checks for password validation.
-- **LoggingService**: High-performance async logging with a dedicated writer thread, batching support, and configurable rotation (Daily, Size-based, etc.).
+- **LoggingService**: Extends the **Logback Engine** securely using **`AsyncAppender`**s around `RollingFileAppender` and `ConsoleAppender`. It dynamically instantiates rotation policies from YAML rather than requiring a static `logback.xml` file, keeping the deployment minimal.
 - **MetricsService**: Integrated Micrometer support with a Prometheus endpoint and health check listener.
 
 ## Data Flow (HTTP Example)

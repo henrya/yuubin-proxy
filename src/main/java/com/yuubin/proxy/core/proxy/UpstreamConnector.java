@@ -73,8 +73,8 @@ public class UpstreamConnector {
             throws IOException {
         OutputStream out = socket.getOutputStream();
         StringBuilder sb = new StringBuilder();
-        sb.append(String.format("CONNECT %s:%d HTTP/1.1%n", host, port));
-        sb.append(String.format("Host: %s:%d%n", host, port));
+        sb.append("CONNECT ").append(host).append(":").append(port).append(" HTTP/1.1\r\n");
+        sb.append("Host: ").append(host).append(":").append(port).append("\r\n");
 
         if (upstream.getUsername() != null && upstream.getPassword() != null) {
             log.warn("Sending proxy credentials to upstream HTTP proxy ({}:{}) over a potentially "

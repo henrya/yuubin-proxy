@@ -24,7 +24,7 @@ This folder contains documentation for various configuration scenarios. The YAML
 
 ## 6. Advanced Logging
 **File:** [examples/logging-advanced.yml](examples/logging-advanced.yml)
-**Description:** Showcases custom log formats including request methods, query parameters, and optional response auditing.
+**Description:** Showcases custom log formats including request methods, query parameters, optional response auditing, and configuring log file rotation size and history via Logback securely.
 
 ---
 

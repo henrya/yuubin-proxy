@@ -1,58 +1,47 @@
 package com.yuubin.proxy.core.services;
 
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.yuubin.proxy.config.LoggingConfig;
 import com.yuubin.proxy.config.YuubinProperties;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.classic.AsyncAppender;
+import ch.qos.logback.core.ConsoleAppender;
+import ch.qos.logback.core.rolling.RollingFileAppender;
+import ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy;
+import ch.qos.logback.core.rolling.TimeBasedRollingPolicy;
+import ch.qos.logback.core.util.FileSize;
 
 /**
  * Service responsible for request and proxy activity logging.
  * Supports configurable Apache-style log formats for HTTP and specialized
  * logging for SOCKS.
- * Now also supports file logging with rotation (Daily, Weekly, Monthly, or
- * Size-based).
+ * Uses Logback programmatically to handle file rotation.
  */
 public class LoggingService {
 
-    private static final Logger log = LoggerFactory.getLogger(LoggingService.class);
-    private static final String LOG_QUEUE_FULL_MSG = "Log queue is full, dropping line: {}";
+    private static final Logger rootLog = LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+    private static final Logger accessLogObj = LoggerFactory.getLogger("ACCESS_LOG");
 
     private final AtomicReference<YuubinProperties> properties;
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MMM/yyyy:HH:mm:ss Z");
 
     /**
-     * Cached formatted timestamp, refreshed at most once per second to avoid
-     * repeated clock + TZ lookups.
+     * Cached formatted timestamp, refreshed at most once per second.
      */
     private volatile String cachedTimestamp = "";
-    /** The epoch second at which {@link #cachedTimestamp} was last produced. */
     private volatile long cachedTimestampSec = 0;
-
-    // File logging fields
-    private final BlockingQueue<String> logQueue = new LinkedBlockingQueue<>(10000);
-    private final Object lock = new Object();
-    private Thread writerThread;
-    private volatile boolean running = true;
-    private String currentRotationKey;
-    private long currentSizeBytes;
 
     /**
      * Initializes the LoggingService with the provided configuration.
@@ -61,255 +50,7 @@ public class LoggingService {
      */
     public LoggingService(YuubinProperties properties) {
         this.properties = new AtomicReference<>(properties);
-        startWriterThread();
-    }
-
-    private void startWriterThread() {
-        writerThread = Thread.ofPlatform().daemon().name("logging-writer").start(() -> {
-            while (running || !logQueue.isEmpty()) {
-                try {
-                    String logLine = logQueue.poll(100, TimeUnit.MILLISECONDS);
-                    if (logLine != null) {
-                        processLogLine(logLine);
-                    } else {
-                        closeCurrentWriter();
-                    }
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                } catch (Exception e) {
-                    log.error("Error in logging writer thread", e);
-                    closeCurrentWriter();
-                }
-            }
-            closeCurrentWriter();
-        });
-    }
-
-    private BufferedWriter currentWriter;
-    private String currentOpenPath;
-
-    private void processLogLine(String logLine) throws IOException {
-        LoggingConfig config = properties.get().getLogging();
-        if (!config.isFileEnabled()) {
-            return;
-        }
-
-        synchronized (lock) {
-            ensureDirectoryExists(config.getFilePath());
-            checkRotation(config);
-
-            Path logPath = Paths.get(config.getFilePath(), config.getFileName());
-            String pathStr = logPath.toString();
-
-            if (currentWriter == null || !pathStr.equals(currentOpenPath)) {
-                closeCurrentWriter();
-                currentWriter = createWriter(logPath);
-                currentOpenPath = pathStr;
-            }
-
-            writeLogLine(currentWriter, logLine);
-            processBatch(currentWriter);
-            currentWriter.flush();
-        }
-    }
-
-    private void processBatch(BufferedWriter bw) throws IOException {
-        int batch = 0;
-        while (!logQueue.isEmpty() && batch++ < 100) {
-            String nextLine = logQueue.poll();
-            if (nextLine != null) {
-                writeLogLine(bw, nextLine);
-            }
-        }
-    }
-
-    private void closeCurrentWriter() {
-        if (currentWriter != null) {
-            try {
-                currentWriter.close();
-            } catch (IOException e) {
-                log.error("Failed to close log writer", e);
-            }
-            currentWriter = null;
-            currentOpenPath = null;
-        }
-    }
-
-    /**
-     * Creates a BufferedWriter for the specified log path.
-     * 
-     * @param logPath The path to the log file.
-     * @return A new BufferedWriter instance.
-     * @throws IOException If an I/O error occurs.
-     */
-    private BufferedWriter createWriter(Path logPath) throws IOException {
-        return new BufferedWriter(new FileWriter(logPath.toFile(), StandardCharsets.UTF_8, true));
-    }
-
-    /**
-     * Writes a single log line to the provided writer and updates current size
-     * tracking.
-     * 
-     * @param bw      The writer to use.
-     * @param logLine The log line to write.
-     * @throws IOException If an I/O error occurs.
-     */
-    private void writeLogLine(BufferedWriter bw, String logLine) throws IOException {
-        bw.write(logLine);
-        bw.newLine();
-        currentSizeBytes += logLine.length() + System.lineSeparator().length();
-    }
-
-    /**
-     * Ensures that the parent directory for a log file exists.
-     * 
-     * @param path The directory path to check/create.
-     * @throws IOException If directory creation fails.
-     */
-    private void ensureDirectoryExists(String path) throws IOException {
-        Path dir = Paths.get(path);
-        if (!Files.exists(dir)) {
-            Files.createDirectories(dir);
-        }
-    }
-
-    /**
-     * Checks if the log file should be rotated based on the current configuration.
-     * 
-     * @param config The logging configuration.
-     * @throws IOException If an I/O error occurs during rotation.
-     */
-    private void checkRotation(LoggingConfig config) throws IOException {
-        String rotation = config.getRotation().toUpperCase();
-        LocalDateTime now = LocalDateTime.now();
-        String key = "";
-        boolean shouldRotate = false;
-
-        switch (rotation) {
-            case "DAILY" -> {
-                key = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
-                shouldRotate = isRotationDue(key);
-            }
-            case "WEEKLY" -> {
-                // Using year and week of year
-                key = now.format(DateTimeFormatter.ofPattern("yyyy-'W'w"));
-                shouldRotate = isRotationDue(key);
-            }
-            case "MONTHLY" -> {
-                key = now.format(DateTimeFormatter.ofPattern("yyyy-MM"));
-                shouldRotate = isRotationDue(key);
-            }
-            case "SIZE" -> {
-                key = now.format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
-                shouldRotate = isSizeRotationDue(config);
-            }
-            default -> {
-                // No rotation needed for unknown types
-            }
-        }
-
-        if (shouldRotate) {
-            rotate(config, currentRotationKey != null ? currentRotationKey : "old");
-            currentRotationKey = key;
-            currentSizeBytes = 0;
-        } else if (currentRotationKey == null) {
-            currentRotationKey = key;
-        }
-    }
-
-    private boolean isRotationDue(String newKey) {
-        return currentRotationKey != null && !currentRotationKey.equals(newKey);
-    }
-
-    private boolean isSizeRotationDue(LoggingConfig config) throws IOException {
-        long maxSizeBytes = parseSize(config.getMaxSize());
-        if (currentSizeBytes == 0) {
-            Path logPath = Paths.get(config.getFilePath(), config.getFileName());
-            if (Files.exists(logPath)) {
-                currentSizeBytes = Files.size(logPath);
-            }
-        }
-        return currentSizeBytes >= maxSizeBytes;
-    }
-
-    /**
-     * Executes the rotation logic, moving the current log file to a suffixed name.
-     * 
-     * @param config The logging configuration.
-     * @param suffix The suffix to add to the rotated log file (e.g., date).
-     * @throws IOException If the file move fails.
-     */
-    private void rotate(LoggingConfig config, String suffix) throws IOException {
-        Path currentLog = Paths.get(config.getFilePath(), config.getFileName());
-        if (!Files.exists(currentLog)) {
-            return;
-        }
-
-        String rotatedFileName = config.getFileName() + "." + suffix;
-        Path rotatedLog = Paths.get(config.getFilePath(), rotatedFileName);
-
-        // If size-based, we might have multiple rotations in same second, though
-        // unlikely with current formatter
-        // but just in case:
-        int i = 1;
-        while (Files.exists(rotatedLog)) {
-            rotatedLog = Paths.get(config.getFilePath(), rotatedFileName + "." + i++);
-        }
-
-        Files.move(currentLog, rotatedLog);
-        cleanupOldLogs(config);
-    }
-
-    /**
-     * Deletes older log files that exceed the maximum history limit.
-     * 
-     * @param config The logging configuration.
-     */
-    private void cleanupOldLogs(LoggingConfig config) {
-        try {
-            File dir = new File(config.getFilePath());
-            File[] files = dir.listFiles((d, name) -> name.startsWith(config.getFileName() + "."));
-            if (files != null && files.length > config.getMaxHistory()) {
-                Arrays.sort(files, Comparator.comparingLong(File::lastModified));
-                int toDelete = files.length - config.getMaxHistory();
-                for (int i = 0; i < toDelete; i++) {
-                    if (!Files.deleteIfExists(files[i].toPath())) {
-                        log.warn("Failed to delete old log file: {}", files[i].getName());
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.error("Error during log cleanup", e);
-        }
-    }
-
-    /**
-     * Parses a size string (e.g., "10MB", "1GB") into bytes.
-     * 
-     * @param size The size string.
-     * @return The size in bytes.
-     */
-    private long parseSize(String size) {
-        String s = size.toUpperCase().trim();
-        long multiplier = 1;
-        if (s.endsWith("KB")) {
-            multiplier = 1024L;
-            s = s.substring(0, s.length() - 2);
-        } else if (s.endsWith("MB")) {
-            multiplier = 1024L * 1024;
-            s = s.substring(0, s.length() - 2);
-        } else if (s.endsWith("GB")) {
-            multiplier = 1024L * 1024 * 1024;
-            s = s.substring(0, s.length() - 2);
-        } else if (s.endsWith("B")) {
-            s = s.substring(0, s.length() - 1);
-        }
-        try {
-            return Long.parseLong(s.trim()) * multiplier;
-        } catch (NumberFormatException e) {
-            return 10L * 1024 * 1024; // Default 10MB
-        }
+        configureLogback(properties.getLogging());
     }
 
     /**
@@ -325,23 +66,127 @@ public class LoggingService {
      * @param properties The new configuration properties.
      */
     public void updateProperties(YuubinProperties properties) {
-        synchronized (lock) {
-            this.properties.set(properties);
-            // Reset rotation key to trigger re-check if config changed
-            this.currentRotationKey = null;
-            this.currentSizeBytes = 0;
+        this.properties.set(properties);
+        configureLogback(properties.getLogging());
+    }
+
+    private void configureLogback(LoggingConfig config) {
+        LoggerContext lc = (LoggerContext) LoggerFactory.getILoggerFactory();
+        lc.reset();
+
+        // Default layout for application logs
+        PatternLayoutEncoder rootEncoder = new PatternLayoutEncoder();
+        rootEncoder.setContext(lc);
+        rootEncoder.setPattern("%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n");
+        rootEncoder.start();
+
+        // Raw layout for access logs
+        PatternLayoutEncoder accessEncoder = new PatternLayoutEncoder();
+        accessEncoder.setContext(lc);
+        accessEncoder.setPattern("%msg%n");
+        accessEncoder.start();
+
+        // Root Console Appender
+        ConsoleAppender<ILoggingEvent> rootConsole = new ConsoleAppender<>();
+        rootConsole.setContext(lc);
+        rootConsole.setName("CONSOLE_ROOT");
+        rootConsole.setEncoder(rootEncoder);
+        rootConsole.start();
+
+        // Async wrapper for Root Console
+        AsyncAppender asyncRootConsole = new AsyncAppender();
+        asyncRootConsole.setContext(lc);
+        asyncRootConsole.setName("ASYNC_CONSOLE_ROOT");
+        asyncRootConsole.setQueueSize(1024);
+        asyncRootConsole.setDiscardingThreshold(0); // Keep all events
+        asyncRootConsole.addAppender(rootConsole);
+        asyncRootConsole.start();
+
+        ch.qos.logback.classic.Logger rootLogger = lc.getLogger(Logger.ROOT_LOGGER_NAME);
+        rootLogger.setLevel(Level.INFO);
+        rootLogger.addAppender(asyncRootConsole);
+
+        // Access Logger configuration
+        ch.qos.logback.classic.Logger accessLogger = lc.getLogger("ACCESS_LOG");
+        accessLogger.setAdditive(false); // Do not bubble up to root
+        accessLogger.setLevel(Level.INFO);
+
+        ConsoleAppender<ILoggingEvent> accessConsole = new ConsoleAppender<>();
+        accessConsole.setContext(lc);
+        accessConsole.setName("CONSOLE_ACCESS");
+        accessConsole.setEncoder(accessEncoder);
+        // Async wrapper for Access Console
+        AsyncAppender asyncAccessConsole = new AsyncAppender();
+        asyncAccessConsole.setContext(lc);
+        asyncAccessConsole.setName("ASYNC_CONSOLE_ACCESS");
+        asyncAccessConsole.setQueueSize(2048); // Slightly larger queue for potentially high-volume access logs
+        asyncAccessConsole.setDiscardingThreshold(0);
+        asyncAccessConsole.addAppender(accessConsole);
+        asyncAccessConsole.start();
+
+        accessLogger.addAppender(asyncAccessConsole);
+
+        if (config.isFileEnabled()) {
+            setupFileAppender(lc, config, accessEncoder, accessLogger);
         }
+    }
+
+    private void setupFileAppender(LoggerContext lc, LoggingConfig config, PatternLayoutEncoder encoder,
+            ch.qos.logback.classic.Logger accessLogger) {
+
+        RollingFileAppender<ILoggingEvent> fileAppender = new RollingFileAppender<>();
+        fileAppender.setContext(lc);
+        fileAppender.setName("FILE_ACCESS");
+
+        Path logPath = Paths.get(config.getFilePath(), config.getFileName());
+        fileAppender.setFile(logPath.toString());
+        fileAppender.setEncoder(encoder);
+
+        String rotation = config.getRotation().toUpperCase();
+        if ("SIZE".equals(rotation)) {
+            SizeAndTimeBasedRollingPolicy<ILoggingEvent> policy = new SizeAndTimeBasedRollingPolicy<>();
+            policy.setContext(lc);
+            policy.setParent(fileAppender);
+            policy.setFileNamePattern(config.getFilePath() + "/" + config.getFileName() + ".%d{yyyy-MM-dd}.%i");
+            policy.setMaxFileSize(FileSize.valueOf(config.getMaxSize()));
+            policy.setMaxHistory(config.getMaxHistory());
+            policy.start();
+            fileAppender.setRollingPolicy(policy);
+        } else {
+            TimeBasedRollingPolicy<ILoggingEvent> policy = new TimeBasedRollingPolicy<>();
+            policy.setContext(lc);
+            policy.setParent(fileAppender);
+
+            String datePattern = switch (rotation) {
+                case "WEEKLY" -> "yyyy-ww";
+                case "MONTHLY" -> "yyyy-MM";
+                default -> "yyyy-MM-dd";
+            };
+
+            policy.setFileNamePattern(config.getFilePath() + "/" + config.getFileName() + ".%d{" + datePattern + "}");
+            policy.setMaxHistory(config.getMaxHistory());
+            policy.start();
+            fileAppender.setRollingPolicy(policy);
+        }
+
+        fileAppender.start();
+
+        // Async wrapper for File Appender
+        AsyncAppender asyncFileAppender = new AsyncAppender();
+        asyncFileAppender.setContext(lc);
+        asyncFileAppender.setName("ASYNC_FILE_ACCESS");
+        asyncFileAppender.setQueueSize(4096);
+        asyncFileAppender.setDiscardingThreshold(0);
+        asyncFileAppender.addAppender(fileAppender);
+        asyncFileAppender.start();
+
+        accessLogger.addAppender(asyncFileAppender);
+
+        rootLog.info("File logging enabled. Outputting to: {}", logPath.toAbsolutePath().normalize());
     }
 
     /**
      * Logs an HTTP request using the configured format.
-     * 
-     * @param remoteHost Client's IP or hostname.
-     * @param user       Authenticated username (if any).
-     * @param method     HTTP method (GET, POST, etc.).
-     * @param uri        Request URI.
-     * @param status     HTTP response status code.
-     * @param bytes      Number of bytes sent in the response body.
      */
     public void logRequest(String remoteHost, String user, String method, String uri, int status, long bytes) {
         YuubinProperties currentProps = this.properties.get();
@@ -360,33 +205,24 @@ public class LoggingService {
                 query = uri.substring(queryIndex);
             }
         } catch (Exception ignored) {
-            // Ignored: best effort to extract query
+            // Intentionally swallowed: if URI parsing fails, we gracefully fall back to an
+            // empty query string
+            // so that logging errors do not interrupt or fail the actual proxy request
+            // processing.
         }
 
         LogRecord logRecord = new LogRecord(remoteHost, userStr, time, requestLine, statusStr, byteStr, method, query);
         String logLine = formatLogLine(format, logRecord);
 
-        log.info(logLine);
-        if (logCfg.isFileEnabled() && !logQueue.offer(logLine)) {
-            log.debug(LOG_QUEUE_FULL_MSG, logLine);
-        }
+        accessLogObj.info(logLine);
 
         if (logCfg.isLogResponse()) {
-            String respLine = String.format("[RESPONSE] %s %s -> STATUS: %d, BYTES: %s", method, uri, status, byteStr);
-            log.info(respLine);
-            if (logCfg.isFileEnabled() && !logQueue.offer(respLine)) {
-                log.debug(LOG_QUEUE_FULL_MSG, respLine);
-            }
+            accessLogObj.info("[RESPONSE] {} {} -> STATUS: {}, BYTES: {}", method, uri, status, byteStr);
         }
     }
 
     /**
      * Formats a log line based on the Apache-style format string.
-     * Supported tokens: %h, %l, %u, %t, %r, %>s, %b, %m, %q.
-     * 
-     * @param format    The format string.
-     * @param logRecord The logging context containing all request data.
-     * @return The formatted log line.
      */
     private String formatLogLine(String format, LogRecord logRecord) {
         StringBuilder sb = new StringBuilder(format.length() + 100);
@@ -403,15 +239,6 @@ public class LoggingService {
         return sb.toString();
     }
 
-    /**
-     * Appends a specific token value to the formatted log line.
-     *
-     * @param sb         The StringBuilder to append to.
-     * @param format     The format string being parsed.
-     * @param currentIdx The current position in the format string (at '%').
-     * @param logRecord  The logging context.
-     * @return The new index position in the format string after the token.
-     */
     private int appendToken(StringBuilder sb, String format, int currentIdx, LogRecord logRecord) {
         char next = format.charAt(currentIdx + 1);
         int skip = 1;
@@ -443,11 +270,6 @@ public class LoggingService {
 
     /**
      * Returns a formatted timestamp string for the current second.
-     * Refreshes the cached value at most once per second so that repeated calls
-     * within the same second avoid redundant clock lookups and timezone resolution.
-     * 
-     * @return Formatted timestamp string (e.g.,
-     *         {@code 22/Feb/2026:23:30:00 +0900}).
      */
     private String getCachedTimestamp() {
         long nowSec = java.time.Instant.now().getEpochSecond();
@@ -460,38 +282,17 @@ public class LoggingService {
 
     /**
      * Logs SOCKS proxy activity.
-     *
-     * @param client   Client's IP.
-     * @param target   Target host and port.
-     * @param protocol The protocol version (SOCKS4 or SOCKS5).
-     * @param status   SOCKS response code or status indicator.
      */
-
     public void logSocks(String client, String target, String protocol, int status) {
-
-        YuubinProperties currentProps = this.properties.get();
-        String logLine = String.format("%s [%s] %s %s %d", client, getCachedTimestamp(), protocol,
-                target, status);
-        log.info(logLine);
-        if (currentProps.getLogging().isFileEnabled() && !logQueue.offer(logLine)) {
-            log.debug(LOG_QUEUE_FULL_MSG, logLine);
-        }
+        String logLine = String.format("%s [%s] %s %s %d", client, getCachedTimestamp(), protocol, target, status);
+        accessLogObj.info(logLine);
     }
 
     /**
      * Gracefully shuts down the logging service.
      */
     public void shutdown() {
-        running = false;
-        if (writerThread != null) {
-            try {
-                // Allow up to 5 s for the writer thread to drain its queue before giving up.
-                // The previous 100 ms timeout could silently discard the final log lines on JVM
-                // exit.
-                writerThread.join(5000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
+        LoggerContext lc = (LoggerContext) LoggerFactory.getILoggerFactory();
+        lc.stop();
     }
 }
