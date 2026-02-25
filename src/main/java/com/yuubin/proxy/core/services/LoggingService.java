@@ -73,6 +73,9 @@ public class LoggingService {
     private void configureLogback(LoggingConfig config) {
         LoggerContext lc = (LoggerContext) LoggerFactory.getILoggerFactory();
         lc.reset();
+        if (!lc.isStarted()) {
+            lc.start();
+        }
 
         // Default layout for application logs
         PatternLayoutEncoder rootEncoder = new PatternLayoutEncoder();
@@ -99,6 +102,7 @@ public class LoggingService {
         asyncRootConsole.setName("ASYNC_CONSOLE_ROOT");
         asyncRootConsole.setQueueSize(1024);
         asyncRootConsole.setDiscardingThreshold(0); // Keep all events
+        asyncRootConsole.setMaxFlushTime(5000);
         asyncRootConsole.addAppender(rootConsole);
         asyncRootConsole.start();
 
@@ -121,6 +125,7 @@ public class LoggingService {
         asyncAccessConsole.setName("ASYNC_CONSOLE_ACCESS");
         asyncAccessConsole.setQueueSize(2048); // Slightly larger queue for potentially high-volume access logs
         asyncAccessConsole.setDiscardingThreshold(0);
+        asyncAccessConsole.setMaxFlushTime(5000);
         asyncAccessConsole.addAppender(accessConsole);
         asyncAccessConsole.start();
 
@@ -177,6 +182,7 @@ public class LoggingService {
         asyncFileAppender.setName("ASYNC_FILE_ACCESS");
         asyncFileAppender.setQueueSize(4096);
         asyncFileAppender.setDiscardingThreshold(0);
+        asyncFileAppender.setMaxFlushTime(5000);
         asyncFileAppender.addAppender(fileAppender);
         asyncFileAppender.start();
 
@@ -292,6 +298,11 @@ public class LoggingService {
      * Gracefully shuts down the logging service.
      */
     public void shutdown() {
+        try {
+            Thread.sleep(150); // Ensure recent logs enter the AsyncAppender queue before stopping
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         LoggerContext lc = (LoggerContext) LoggerFactory.getILoggerFactory();
         lc.stop();
     }

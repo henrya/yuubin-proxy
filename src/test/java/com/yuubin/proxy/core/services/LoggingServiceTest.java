@@ -26,6 +26,7 @@ class LoggingServiceTest {
     void tearDown() {
         if (loggingService != null) {
             loggingService.shutdown();
+            loggingService = null;
         }
     }
 
@@ -62,8 +63,7 @@ class LoggingServiceTest {
         loggingService = new LoggingService(props);
         loggingService.logRequest("127.0.0.1", "user", "GET", "/", 200, 100);
 
-        // Wait for writer thread to process
-        TimeUnit.MILLISECONDS.sleep(500);
+        loggingService.shutdown();
 
         Path logFile = tempDir.resolve("test.log");
         assertThat(Files.exists(logFile)).isTrue();
@@ -84,15 +84,17 @@ class LoggingServiceTest {
         loggingService = new LoggingService(props);
 
         // Write enough to trigger rotation (over 1KB)
-        String largeLog = "This is a long log line that exceeds the 1KB limit when repeated enough times. ".repeat(20);
-        for (int i = 0; i < 5; i++) {
+        String largeLog = "This is a long log line that exceeds the 1KB limit when repeated enough times. ".repeat(40); // 3.2KB
+                                                                                                                        // per
+                                                                                                                        // line
+        for (int i = 0; i < 20; i++) { // Write ~64KB
             loggingService.logRequest("127.0.0.1", "user", "GET", largeLog, 200, 100);
+            Thread.sleep(10); // Give AsyncAppender time to flush and trigger size evaluation
         }
-        TimeUnit.MILLISECONDS.sleep(300);
-
-        // This log should trigger rotation or be in the new file
-        loggingService.logRequest("127.0.0.1", "user", "GET", "Small log", 200, 100);
-        TimeUnit.MILLISECONDS.sleep(300);
+        loggingService.logRequest("127.0.0.1", null, "GET", "Small log", 200, 0);
+        Thread.sleep(500); // Give Logback Rolling policy plenty of time to rotate the file on its
+                           // background thread
+        loggingService.shutdown();
 
         // Check for rotated file
         File dir = tempDir.toFile();
@@ -116,8 +118,8 @@ class LoggingServiceTest {
         props.setLogging(logCfg);
 
         loggingService = new LoggingService(props);
-        loggingService.logRequest("127.0.0.1", null, "GET", "/", 200, 0);
-        TimeUnit.MILLISECONDS.sleep(300);
+        loggingService.logRequest("127.0.0.1", "user", "GET", "/", 200, 100);
+        loggingService.shutdown();
 
         Path logFile = tempDir.resolve("daily.log");
         assertThat(Files.exists(logFile)).isTrue();
@@ -135,8 +137,7 @@ class LoggingServiceTest {
 
         loggingService = new LoggingService(props);
         loggingService.logRequest("127.0.0.1", "admin", "POST", "/api/v1?test=1", 201, 1024);
-
-        TimeUnit.MILLISECONDS.sleep(500);
+        loggingService.shutdown();
 
         Path logFile = tempDir.resolve("format.log");
         String content = Files.readString(logFile);
@@ -161,7 +162,7 @@ class LoggingServiceTest {
         for (int i = 0; i < 20; i++) {
             loggingService.logRequest("127.0.0.1", null, "GET", "/test" + i + " " + largeLog, 200, 0);
         }
-        TimeUnit.MILLISECONDS.sleep(300);
+        loggingService.shutdown();
 
         File dir = tempDir.toFile();
         File[] files = dir.listFiles((d, name) -> name.startsWith("cleanup.log."));
@@ -181,7 +182,6 @@ class LoggingServiceTest {
 
         loggingService = new LoggingService(props);
         loggingService.logRequest("127.0.0.1", null, "GET", "/1", 200, 0);
-        TimeUnit.MILLISECONDS.sleep(300);
 
         YuubinProperties newProps = new YuubinProperties();
         LoggingConfig newCfg = new LoggingConfig();
@@ -192,7 +192,7 @@ class LoggingServiceTest {
 
         loggingService.updateProperties(newProps);
         loggingService.logRequest("127.0.0.1", null, "GET", "/2", 200, 0);
-        TimeUnit.MILLISECONDS.sleep(300);
+        loggingService.shutdown();
 
         assertThat(Files.exists(tempDir.resolve("update-new.log"))).isTrue();
     }
@@ -209,7 +209,7 @@ class LoggingServiceTest {
 
         loggingService = new LoggingService(props);
         loggingService.logRequest("127.0.0.1", "u", "GET", "/u", 200, 50);
-        TimeUnit.MILLISECONDS.sleep(300);
+        loggingService.shutdown();
 
         String content = Files.readString(tempDir.resolve("resp.log"));
         assertThat(content).contains("[RESPONSE] GET /u -> STATUS: 200, BYTES: 50");
@@ -226,7 +226,7 @@ class LoggingServiceTest {
 
         loggingService = new LoggingService(props);
         loggingService.logSocks("127.0.0.1", "target:80", "SOCKS5", 0);
-        TimeUnit.MILLISECONDS.sleep(300);
+        loggingService.shutdown();
 
         assertThat(Files.readString(tempDir.resolve("socks.log"))).contains("SOCKS5 target:80 0");
     }
