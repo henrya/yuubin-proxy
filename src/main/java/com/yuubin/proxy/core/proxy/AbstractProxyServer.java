@@ -38,6 +38,9 @@ public abstract class AbstractProxyServer implements ProxyServer {
     /** Logger instance for the server implementation. */
     protected final Logger log = LoggerFactory.getLogger(getClass());
 
+    /** Access logger for request-level activity (shared across all proxy types). */
+    private static final Logger accessLog = LoggingService.getAccessLogger();
+
     /** Configuration for this specific proxy server instance. */
     protected final ProxyServerConfig config;
 
@@ -239,7 +242,7 @@ public abstract class AbstractProxyServer implements ProxyServer {
         String remoteAddr = client.getInetAddress().getHostAddress();
 
         if (isBlacklisted(remoteAddr)) {
-            log.warn("{} connection rejected from blacklisted IP: {}", getProxyName(), remoteAddr);
+            accessLog.warn("{} connection rejected from blacklisted IP: {}", getProxyName(), remoteAddr);
             IoUtils.closeQuietly(client, "blacklisted client socket");
             return;
         }
@@ -268,7 +271,7 @@ public abstract class AbstractProxyServer implements ProxyServer {
                 }
             });
         } else {
-            log.warn("{} connection limit reached ({})", getProxyName(), config.getMaxConnections());
+            accessLog.warn("{} connection limit reached ({})", getProxyName(), config.getMaxConnections());
             IoUtils.closeQuietly(client, "limit reached client socket");
         }
     }

@@ -19,12 +19,15 @@ auth:
 # ------------------------------------------------------------------------------
 # Access Logging
 # ------------------------------------------------------------------------------
-# Apache Combined-style access log printed to stdout.
+# Access logs go to EITHER console OR file (never both).
+# When fileEnabled is false (default), access logs print to stdout.
+# When fileEnabled is true, access logs go ONLY to the configured file.
+# Application logs (startup, shutdown, errors) always print to console.
 logging:
   format: '%h %l %u %t "%r" %>s %b'
   logResponse: false                     # Set to true for verbose response auditing
-  # --- File logging (disabled by default) ---
-  # fileEnabled: true
+  # --- File logging (disabled = console mode) ---
+  # fileEnabled: true                    # Switch access logs from console to file
   # filePath: logs
   # fileName: yuubin-proxy.log
   # rotation: DAILY                      # DAILY | WEEKLY | MONTHLY | SIZE

@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Authenticator;
+
+import org.slf4j.Logger;
 import java.net.InetSocketAddress;
 import java.net.PasswordAuthentication;
 import java.net.ProxySelector;
@@ -72,6 +74,9 @@ public class HttpProxyServer extends AbstractProxyServer {
     private static final String INTERNAL_ERROR_MSG = "Internal Server Error";
     private static final String NOT_FOUND_MSG = "Not Found";
     private static final String PATH_SEP = "/";
+
+    /** Access logger for request-level activity (tunnels, errors, forwarding). */
+    private static final Logger accessLog = LoggingService.getAccessLogger();
 
     /** Headers that should not be forwarded from client to backend. */
     private static final Set<String> DISALLOWED_HEADERS;
@@ -301,9 +306,9 @@ public class HttpProxyServer extends AbstractProxyServer {
                 // Loop continues as long as client is connected and request is processed
             }
         } catch (ProtocolException e) {
-            log.warn("HTTP protocol error from {}: {}", remoteAddr, e.getMessage());
+            accessLog.warn("HTTP protocol error from {}: {}", remoteAddr, e.getMessage());
         } catch (ProxyException e) {
-            log.error("HTTP proxy error for {}: {}", remoteAddr, e.getMessage());
+            accessLog.error("HTTP proxy error for {}: {}", remoteAddr, e.getMessage());
         } catch (Exception e) {
             log.debug("Unexpected HTTP client error from {}: {}", remoteAddr, e.getMessage());
         }
@@ -342,10 +347,10 @@ public class HttpProxyServer extends AbstractProxyServer {
             targetOut.write("\r\n".getBytes(StandardCharsets.US_ASCII));
             targetOut.flush();
 
-            log.info("WebSocket Tunnel: {} -> {}", context.getUri(), targetUrl);
+            accessLog.info("WebSocket Tunnel: {} -> {}", context.getUri(), targetUrl);
             IoUtils.relay(clientIn, clientOut, targetIn, targetOut, executor, bytesSent, bytesReceived);
         } catch (Exception e) {
-            log.warn("WebSocket tunnel failed: {}", e.getMessage());
+            accessLog.warn("WebSocket tunnel failed: {}", e.getMessage());
             writeErrorResponse(clientOut, HTTP_BAD_GATEWAY, BAD_GATEWAY_MSG);
         }
     }
@@ -403,10 +408,10 @@ public class HttpProxyServer extends AbstractProxyServer {
             clientOut.write(("HTTP/1.1 200 Connection Established\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
             clientOut.flush();
 
-            log.info("HTTPS Tunnel: {}", authority);
+            accessLog.info("HTTPS Tunnel: {}", authority);
             IoUtils.relay(client, target, executor, bytesSent, bytesReceived);
         } catch (IOException e) {
-            log.warn("Failed to establish HTTPS tunnel to {}: {}", authority, e.getMessage());
+            accessLog.warn("Failed to establish HTTPS tunnel to {}: {}", authority, e.getMessage());
             try {
                 writeErrorResponse(clientOut, HTTP_BAD_GATEWAY, BAD_GATEWAY_MSG);
             } catch (IOException ignored) {
@@ -448,11 +453,11 @@ public class HttpProxyServer extends AbstractProxyServer {
                 return statusCode;
             }
         } catch (IOException e) {
-            log.error("HTTP backend communication error: {}", e.getMessage());
+            accessLog.error("HTTP backend communication error: {}", e.getMessage());
             writeErrorResponse(clientOut, HTTP_BAD_GATEWAY, BAD_GATEWAY_MSG);
             return HTTP_BAD_GATEWAY;
         } catch (InterruptedException e) {
-            log.error("HTTP backend communication interrupted: {}", e.getMessage());
+            accessLog.error("HTTP backend communication interrupted: {}", e.getMessage());
             Thread.currentThread().interrupt();
             writeErrorResponse(clientOut, HTTP_BAD_GATEWAY, BAD_GATEWAY_MSG);
             return HTTP_BAD_GATEWAY;

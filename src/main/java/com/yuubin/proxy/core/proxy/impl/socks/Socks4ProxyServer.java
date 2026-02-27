@@ -13,6 +13,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Objects;
 
+import org.slf4j.Logger;
+
 import com.yuubin.proxy.config.ProxyServerConfig;
 import com.yuubin.proxy.config.YuubinProperties;
 import com.yuubin.proxy.core.exceptions.ProtocolException;
@@ -28,6 +30,9 @@ import io.micrometer.core.instrument.Counter;
  * Supports TCP CONNECT and SOCKS4a domain resolution extension.
  */
 public class Socks4ProxyServer extends AbstractProxyServer {
+
+    /** Access logger for request-level activity. */
+    private static final Logger accessLog = LoggingService.getAccessLogger();
 
     private final Counter requestsTotal;
     private final Counter bytesSent;
@@ -91,7 +96,7 @@ public class Socks4ProxyServer extends AbstractProxyServer {
 
             // Authentication check (using User ID as the identifier)
             if (config.isAuthEnabled() && !authService.userExists(request.userId())) {
-                log.warn("SOCKS4 authentication failed for user: {}", request.userId());
+                accessLog.warn("SOCKS4 authentication failed for user: {}", request.userId());
                 sendResponse(out, 91, 0, new byte[4]);
                 return;
             }
@@ -252,7 +257,8 @@ public class Socks4ProxyServer extends AbstractProxyServer {
             client.setSoTimeout(0);
             IoUtils.relay(client, target, executor, bytesSent, bytesReceived);
         } catch (IOException e) {
-            log.warn("SOCKS4 failed to connect to {}:{}: {}", request.targetHost(), request.port(), e.getMessage());
+            accessLog.warn("SOCKS4 failed to connect to {}:{}: {}", request.targetHost(), request.port(),
+                    e.getMessage());
             sendResponse(out, 91, 0, new byte[4]);
         }
     }

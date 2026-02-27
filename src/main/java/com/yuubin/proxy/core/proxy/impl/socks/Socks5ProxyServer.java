@@ -10,6 +10,8 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
 
+import org.slf4j.Logger;
+
 import com.yuubin.proxy.config.ProxyServerConfig;
 import com.yuubin.proxy.config.YuubinProperties;
 import com.yuubin.proxy.core.exceptions.ProtocolException;
@@ -28,6 +30,9 @@ public class Socks5ProxyServer extends AbstractProxyServer {
 
     /** SOCKS protocol version byte for SOCKS5. */
     private static final byte SOCKS5_VERSION = 5;
+
+    /** Access logger for request-level activity. */
+    private static final Logger accessLog = LoggingService.getAccessLogger();
 
     private final Counter requestsTotal;
     private final Counter bytesSent;
@@ -246,7 +251,7 @@ public class Socks5ProxyServer extends AbstractProxyServer {
             client.setSoTimeout(0);
             IoUtils.relay(client, target, executor, bytesSent, bytesReceived);
         } catch (IOException e) {
-            log.warn("SOCKS5 failed to connect to {}:{}: {}", request.host(), request.port(), e.getMessage());
+            accessLog.warn("SOCKS5 failed to connect to {}:{}: {}", request.host(), request.port(), e.getMessage());
             sendErrorResponse(out, 4); // Host unreachable
         }
     }
@@ -310,7 +315,7 @@ public class Socks5ProxyServer extends AbstractProxyServer {
         out.flush();
 
         if (!ok) {
-            log.warn("SOCKS5 authentication failed for {}", remoteAddr);
+            accessLog.warn("SOCKS5 authentication failed for {}", remoteAddr);
         }
         return ok;
     }

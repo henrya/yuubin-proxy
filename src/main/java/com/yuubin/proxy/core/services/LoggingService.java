@@ -34,6 +34,17 @@ public class LoggingService {
     private static final Logger rootLog = LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
     private static final Logger accessLogObj = LoggerFactory.getLogger("ACCESS_LOG");
 
+    /**
+     * Provides the shared access logger for proxy server classes.
+     * Messages sent to this logger are routed to either the console or
+     * the configured log file (never both).
+     *
+     * @return the ACCESS_LOG logger instance.
+     */
+    public static Logger getAccessLogger() {
+        return accessLogObj;
+    }
+
     private final AtomicReference<YuubinProperties> properties;
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MMM/yyyy:HH:mm:ss Z");
 
@@ -130,29 +141,29 @@ public class LoggingService {
         rootLogger.setLevel(Level.INFO);
         rootLogger.addAppender(asyncRootConsole);
 
-        // Access Logger configuration
+        // Access Logger configuration — console XOR file, never both
         ch.qos.logback.classic.Logger accessLogger = lc.getLogger("ACCESS_LOG");
         accessLogger.setAdditive(false); // Do not bubble up to root
         accessLogger.setLevel(Level.INFO);
 
-        ConsoleAppender<ILoggingEvent> accessConsole = new ConsoleAppender<>();
-        accessConsole.setContext(lc);
-        accessConsole.setName("CONSOLE_ACCESS");
-        accessConsole.setEncoder(accessEncoder);
-        // Async wrapper for Access Console
-        AsyncAppender asyncAccessConsole = new AsyncAppender();
-        asyncAccessConsole.setContext(lc);
-        asyncAccessConsole.setName("ASYNC_CONSOLE_ACCESS");
-        asyncAccessConsole.setQueueSize(2048); // Slightly larger queue for potentially high-volume access logs
-        asyncAccessConsole.setDiscardingThreshold(0);
-        asyncAccessConsole.setMaxFlushTime(5000);
-        asyncAccessConsole.addAppender(accessConsole);
-        asyncAccessConsole.start();
-
-        accessLogger.addAppender(asyncAccessConsole);
-
         if (config.isFileEnabled()) {
+            // File mode: access logs go ONLY to the rolling file
             setupFileAppender(lc, config, accessEncoder, accessLogger);
+        } else {
+            // Console mode: access logs go ONLY to stdout
+            ConsoleAppender<ILoggingEvent> accessConsole = new ConsoleAppender<>();
+            accessConsole.setContext(lc);
+            accessConsole.setName("CONSOLE_ACCESS");
+            accessConsole.setEncoder(accessEncoder);
+            AsyncAppender asyncAccessConsole = new AsyncAppender();
+            asyncAccessConsole.setContext(lc);
+            asyncAccessConsole.setName("ASYNC_CONSOLE_ACCESS");
+            asyncAccessConsole.setQueueSize(2048);
+            asyncAccessConsole.setDiscardingThreshold(0);
+            asyncAccessConsole.setMaxFlushTime(5000);
+            asyncAccessConsole.addAppender(accessConsole);
+            asyncAccessConsole.start();
+            accessLogger.addAppender(asyncAccessConsole);
         }
     }
 
