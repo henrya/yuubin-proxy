@@ -5,6 +5,7 @@ import com.yuubin.proxy.core.loadbalancer.IpHashLoadBalancer;
 import com.yuubin.proxy.core.loadbalancer.RoundRobinLoadBalancer;
 import com.yuubin.proxy.entity.Rule;
 import com.yuubin.proxy.spi.LoadBalancer;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -40,6 +41,7 @@ public class RuleRuntime {
      *
      * @param rule The routing rule to manage runtime state for.
      */
+    @SuppressFBWarnings("EI_EXPOSE_REP2")
     public RuleRuntime(Rule rule) {
         this.rule = rule;
     }
@@ -49,6 +51,7 @@ public class RuleRuntime {
      *
      * @return The wrapped rule.
      */
+    @SuppressFBWarnings("EI_EXPOSE_REP")
     public Rule getRule() {
         return rule;
     }
