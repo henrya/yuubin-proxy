@@ -24,7 +24,7 @@ This folder contains documentation for various configuration scenarios. The YAML
 
 ## 6. Advanced Logging
 **File:** [examples/logging-advanced.yml](examples/logging-advanced.yml)  
-**Description:** Showcases custom Apache-style log formats with a complete token reference (`%h`, `%m`, `%q`, `%>s`, etc.), optional response auditing, and Logback-based file rotation (daily, weekly, monthly, or size-based).
+**Description:** Showcases custom Apache-style log formats with a complete token reference (`%h`, `%m`, `%q`, `%>s`, etc.), optional response auditing, and Logback-based file rotation (daily, weekly, monthly, or size-based). Access logs go to **either console or file** (never both) — enabling file logging automatically disables console output for access logs.
 
 ## 7. Kubernetes-Ready Authentication
 **File:** [examples/kubernetes-auth.yml](examples/kubernetes-auth.yml)  

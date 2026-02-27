@@ -4,6 +4,10 @@
 # Use case: Customizing Apache-style access log formats, enabling file rotation,
 # and auditing response details.
 #
+# Access logs go to EITHER console OR file (never both).
+# When fileEnabled is true, access logs go only to the rolling file.
+# When fileEnabled is false (default), access logs print to stdout.
+# Application logs (startup, shutdown, errors) always print to console.
 # Format tokens:
 #   %h  = Remote host (client IP)
 #   %l  = Remote logname (always "-")
@@ -30,7 +34,7 @@ logging:
   # Log a separate [RESPONSE] line for each request (useful for auditing)
   logResponse: true
 
-  # File rotation via Logback's built-in async appender
+  # File rotation — switches access logs from console to file
   fileEnabled: true
   filePath: "logs/advanced"          # Directory for log files
   fileName: "access.log"            # Base filename

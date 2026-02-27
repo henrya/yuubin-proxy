@@ -98,15 +98,17 @@ auth:
   # usersEnv: YUUBIN_USERS           # Environment variable (format: "u1:p1,u2:p2")
 
 logging:
+  # Access logs go to EITHER console OR file (never both).
+  # Application logs (startup, shutdown) always print to console.
   # %m = HTTP Method, %q = Query String, %r = Request path
   format: '%h %l %u %t "%m %r%q" %>s %b'
   logResponse: false
-  fileEnabled: true
+  fileEnabled: true              # true = file only, false = console only
   filePath: "/var/log/yuubin-proxy"
   fileName: "yuubin-proxy.log"
-  rotation: "DAILY"      # Options: DAILY, WEEKLY, MONTHLY, SIZE
-  # maxSize: "100MB"     # Max single file size. Enable if rotation config is SIZE. 
-  maxHistory: 30         # Max number of rotated logs to keep before purging
+  rotation: "DAILY"              # Options: DAILY, WEEKLY, MONTHLY, SIZE
+  # maxSize: "100MB"             # Max single file size. Enable if rotation is SIZE.
+  maxHistory: 30                 # Max number of rotated logs to keep before purging
 ```
 
 ### Kubernetes Integration

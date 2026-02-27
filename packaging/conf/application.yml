@@ -22,12 +22,16 @@ admin:
 # ------------------------------------------------------------------------
 # Logging Configuration
 # ------------------------------------------------------------------------
+# Access logs go to EITHER console OR file (never both).
+# When fileEnabled is true, access logs go ONLY to the configured file.
+# When fileEnabled is false, access logs go ONLY to stdout.
+# Application logs (startup, shutdown, errors) always print to console.
 logging:
   fileEnabled: true
   filePath: "/var/log/yuubin-proxy"
   fileName: "yuubin-proxy.log"
   rotation: "DAILY"      # Options: DAILY, WEEKLY, MONTHLY, SIZE
-  # maxSize: "100MB"     # Max single file size. Enable if rotation config is SIZE. 
+  # maxSize: "100MB"     # Max single file size. Enable if rotation config is SIZE.
   maxHistory: 30         # Max number of rotated logs to keep before purging
   # Standard combined log format (analogous to Nginx/Apache)
   # %h = Client IP, %l = Identity, %u = User, %t = Time, %m = Method, %r = Path, %q = Query, %s = Status, %b = Bytes

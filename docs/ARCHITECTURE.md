@@ -136,7 +136,7 @@ Yuubin Proxy is a lightweight, high-performance multi-protocol proxy server impl
 
 ### 6. Support Services
 - **AuthService**: Manages user credentials from YAML, Environment Variables, or mounted directories. Uses constant-time equality checks for password validation.
-- **LoggingService**: Extends the **Logback Engine** securely using **`AsyncAppender`**s around `RollingFileAppender` and `ConsoleAppender`. It dynamically instantiates rotation policies from YAML rather than requiring a static `logback.xml` file, keeping the deployment minimal. Timestamp caching uses an `AtomicReference`-based record for thread-safe, lock-free access.
+- **LoggingService**: Implements a **two-logger architecture** — an **App logger** (always console) for lifecycle events and an **Access logger** (console XOR file, never both) for per-request activity. Proxy tunnel, forwarding, and authentication messages are routed through the access logger via `getAccessLogger()`. Uses **`AsyncAppender`**s around `RollingFileAppender` or `ConsoleAppender` (exclusively), dynamically configured from YAML. Timestamp caching uses an `AtomicReference`-based record for thread-safe, lock-free access.
 - **MetricsService**: Integrated Micrometer support with a Prometheus endpoint and health check listener. Admin server binds to `127.0.0.1` by default for security; configurable via `admin.bindAddress`.
 
 ## Data Flow (HTTP Example)
