@@ -1,37 +1,76 @@
+# ==============================================================================
+# Yuubin Proxy — Default Configuration
+# ==============================================================================
+# This configuration starts a single HTTP forward proxy on port 8080.
+# For advanced examples (TLS, SOCKS5, routing rules, load balancing, proxy
+# chaining, Kubernetes auth), see: docs/examples/
+
+# ------------------------------------------------------------------------------
+# Authentication
+# ------------------------------------------------------------------------------
+# Disabled by default. Enable and configure a credential source to require
+# Proxy-Authorization on proxies that have authEnabled: true.
 auth:
-  enabled: true
-  usersPath: users.yml
-  # usersDirectory: /etc/proxy/users  # For Kubernetes ConfigMap mounts (filename=username, content=password)
-  # usersEnv: YUUBIN_USERS           # For environment variables (format: "user1:pass1,user2:pass2")
+  enabled: false
+  # usersPath: users.yml                 # YAML file (classpath or filesystem)
+  # usersDirectory: /etc/yuubin/users    # Directory mount (K8s ConfigMap/Secret)
+  # usersEnv: YUUBIN_USERS              # Env var ("user1:pass1,user2:pass2")
+
+# ------------------------------------------------------------------------------
+# Access Logging
+# ------------------------------------------------------------------------------
+# Apache Combined-style access log printed to stdout.
 logging:
   format: '%h %l %u %t "%r" %>s %b'
-  logResponse: true
-  fileEnabled: false
-  filePath: logs
-  fileName: yuubin-proxy.log
-  rotation: DAILY # Options: DAILY, WEEKLY, MONTHLY, SIZE
-  maxSize: 10MB   # Only used if rotation: SIZE
-  maxHistory: 30  # Number of old log files to keep
+  logResponse: false                     # Set to true for verbose response auditing
+  # --- File logging (disabled by default) ---
+  # fileEnabled: true
+  # filePath: logs
+  # fileName: yuubin-proxy.log
+  # rotation: DAILY                      # DAILY | WEEKLY | MONTHLY | SIZE
+  # maxSize: 10MB                        # Only used when rotation: SIZE
+  # maxHistory: 30                       # Rotated files to keep
+
+# ------------------------------------------------------------------------------
+# Proxy Servers
+# ------------------------------------------------------------------------------
 proxies:
+  # HTTP forward proxy — works as a standard HTTP/HTTPS proxy out of the box.
+  # Configure your browser or system to use localhost:8080 as the HTTP proxy.
   - name: http-proxy
     port: 8080
     type: HTTP
-    authEnabled: true
-    timeout: 60000 # Connection and request timeout in ms (-1 for none, default 60s)
-    maxRedirects: 0 # Max number of redirects to follow (default 0)
-    rules:
-      - path: /google
-        target: https://www.google.com
-        headers:
-          X-Proxy-By: Yuubin
-      - path: /
-        target: http://localhost:3000
-  - name: socks5-proxy
-    port: 1080
-    type: SOCKS5
-    authEnabled: true
-    timeout: 10000
-  - name: socks4-proxy
-    port: 1081
-    type: SOCKS4
-    authEnabled: false
+    # authEnabled: false                 # Require Proxy-Authorization (needs auth.enabled: true)
+    # timeout: 60000                     # Connection timeout in ms (default: 60000)
+    # maxConnections: 10000              # Max concurrent connections (default: 10000)
+    # keepAlive: true                    # TCP keep-alive (default: true)
+    # bindAddress: 0.0.0.0              # Bind to specific interface (default: all)
+    # --- Routing rules (optional) ---
+    # rules:
+    #   - path: /api
+    #     target: http://backend:8080
+    #     headers:
+    #       X-Proxy-By: Yuubin
+
+  # --- SOCKS5 proxy (uncomment to enable) ---
+  # - name: socks5-proxy
+  #   port: 1080
+  #   type: SOCKS5
+  #   authEnabled: false
+  #   timeout: 30000
+
+# ------------------------------------------------------------------------------
+# Admin / Metrics Server
+# ------------------------------------------------------------------------------
+# Exposes /health (liveness probe) and /metrics (Prometheus format).
+admin:
+  enabled: true
+  port: 9090
+  bindAddress: "127.0.0.1"               # Loopback only; use 0.0.0.0 for K8s
+
+# ------------------------------------------------------------------------------
+# Advanced Options (uncomment as needed)
+# ------------------------------------------------------------------------------
+# certificatesPath: /etc/yuubin/certs    # Base directory for TLS keystores
+# globalBlacklist:                       # IPs blocked across ALL proxies
+#   - 192.168.1.100
