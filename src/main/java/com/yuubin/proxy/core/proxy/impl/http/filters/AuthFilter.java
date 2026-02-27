@@ -18,6 +18,12 @@ public class AuthFilter implements HttpFilter {
     private final ProxyServerConfig config;
     private final AuthService authService;
 
+    /**
+     * Initializes the AuthFilter with configuration and authentication service.
+     * 
+     * @param config      The server configuration.
+     * @param authService The authentication provider.
+     */
     @SuppressFBWarnings("EI_EXPOSE_REP2")
     public AuthFilter(ProxyServerConfig config, AuthService authService) {
         this.config = config;

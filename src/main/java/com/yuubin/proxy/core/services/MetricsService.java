@@ -26,6 +26,12 @@ public class MetricsService {
     private HttpServer adminServer;
     private AdminConfig config;
 
+    /**
+     * Initializes the MetricsService with the provided configuration.
+     * Sets up the Prometheus registry and the admin HTTP server.
+     * 
+     * @param properties The root configuration properties.
+     */
     public MetricsService(YuubinProperties properties) {
         this.registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
         this.config = properties.getAdmin();

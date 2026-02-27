@@ -35,6 +35,7 @@ import org.slf4j.LoggerFactory;
  * Uses Virtual Threads for high-performance concurrency.
  */
 public abstract class AbstractProxyServer implements ProxyServer {
+    /** Logger instance for the server implementation. */
     protected final Logger log = LoggerFactory.getLogger(getClass());
 
     /** Configuration for this specific proxy server instance. */

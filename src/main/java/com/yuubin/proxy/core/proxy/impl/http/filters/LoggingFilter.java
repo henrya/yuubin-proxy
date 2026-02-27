@@ -13,6 +13,11 @@ import com.yuubin.proxy.core.services.LoggingService;
 public class LoggingFilter implements HttpFilter {
     private final LoggingService loggingService;
 
+    /**
+     * Initializes the LoggingFilter with the provided logging service.
+     * 
+     * @param loggingService The logging provider.
+     */
     @edu.umd.cs.findbugs.annotations.SuppressFBWarnings("EI_EXPOSE_REP2")
     public LoggingFilter(LoggingService loggingService) {
         this.loggingService = loggingService;

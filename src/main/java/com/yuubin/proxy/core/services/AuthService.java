@@ -305,6 +305,9 @@ public class AuthService {
 
     /**
      * Programmatically adds a user to the active session.
+     * 
+     * @param username The username to add.
+     * @param password The password for the user.
      */
     public void addUser(String username, String password) {
         users.get().put(username, password);
