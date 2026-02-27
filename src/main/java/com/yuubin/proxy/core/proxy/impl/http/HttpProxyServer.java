@@ -42,6 +42,8 @@ import com.yuubin.proxy.core.proxy.impl.http.filters.AuthFilter;
 import com.yuubin.proxy.core.proxy.impl.http.filters.HttpFilter;
 import com.yuubin.proxy.core.proxy.impl.http.filters.LoggingFilter;
 import com.yuubin.proxy.core.proxy.impl.http.filters.RequestContext;
+import com.yuubin.proxy.core.proxy.impl.http.rules.RuleMatcher;
+import com.yuubin.proxy.core.proxy.impl.http.rules.RuleRuntime;
 import com.yuubin.proxy.core.services.AuthService;
 import com.yuubin.proxy.core.services.LoggingService;
 import com.yuubin.proxy.core.utils.IoUtils;
@@ -123,6 +125,7 @@ public class HttpProxyServer extends AbstractProxyServer {
 
     private final HttpClient httpClient;
     private final Map<Rule, HttpClient> ruleHttpClients = new ConcurrentHashMap<>();
+    private final Map<Rule, RuleRuntime> ruleRuntimes = new ConcurrentHashMap<>();
     private final List<HttpFilter> filters;
     private final Counter requestsTotal;
     private final Counter bytesSent;
@@ -155,9 +158,10 @@ public class HttpProxyServer extends AbstractProxyServer {
         configureUpstreamProxy(builder, config.getUpstreamProxy());
         this.httpClient = builder.build();
 
-        // Configure per-rule Upstream Proxy Chaining
+        // Configure per-rule Upstream Proxy Chaining and RuleRuntime
         if (config.getRules() != null) {
             for (Rule rule : config.getRules()) {
+                ruleRuntimes.put(rule, new RuleRuntime(rule));
                 if (rule.getUpstreamProxy() != null) {
                     HttpClient.Builder ruleBuilder = HttpClient.newBuilder()
                             .executor(Executors.newVirtualThreadPerTaskExecutor())
@@ -215,13 +219,14 @@ public class HttpProxyServer extends AbstractProxyServer {
 
         for (Rule rule : config.getRules()) {
             if (rule.getHealthCheckPath() != null && rule.getTargets() != null) {
-                healthCheckExecutor.scheduleAtFixedRate(() -> runHealthCheck(rule),
+                RuleRuntime runtime = ruleRuntimes.get(rule);
+                healthCheckExecutor.scheduleAtFixedRate(() -> runHealthCheck(rule, runtime),
                         0, rule.getHealthCheckInterval(), TimeUnit.MILLISECONDS);
             }
         }
     }
 
-    private void runHealthCheck(Rule rule) {
+    private void runHealthCheck(Rule rule, RuleRuntime runtime) {
         if (rule.getTargets() == null) {
             return;
         }
@@ -242,20 +247,31 @@ public class HttpProxyServer extends AbstractProxyServer {
 
                 HttpResponse<Void> response = httpClient.send(request, HttpResponse.BodyHandlers.discarding());
                 if (response.statusCode() >= 200 && response.statusCode() < 400) {
-                    rule.markHealthy(target);
+                    runtime.markHealthy(target);
                 } else {
                     log.warn("Health check failed for target {} (Status: {})", target, response.statusCode());
-                    rule.markUnhealthy(target);
+                    runtime.markUnhealthy(target);
                 }
             } catch (InterruptedException e) {
                 log.warn("Health check interrupted for target {}: {}", target, e.getMessage());
                 Thread.currentThread().interrupt();
-                rule.markUnhealthy(target);
+                runtime.markUnhealthy(target);
             } catch (Exception e) {
                 log.warn("Health check error for target {}: {}", target, e.getMessage());
-                rule.markUnhealthy(target);
+                runtime.markUnhealthy(target);
             }
         }
+    }
+
+    /**
+     * Returns the {@link RuleRuntime} for the given rule, creating one lazily
+     * if it does not already exist (e.g., rules added via config reload).
+     *
+     * @param rule The routing rule.
+     * @return The corresponding RuleRuntime.
+     */
+    private RuleRuntime getRuntimeFor(Rule rule) {
+        return ruleRuntimes.computeIfAbsent(rule, RuleRuntime::new);
     }
 
     @Override
@@ -486,12 +502,13 @@ public class HttpProxyServer extends AbstractProxyServer {
             return resolveFallbackUrl(uri, clientOut);
         }
 
-        if (!rule.allowRequest(context.getRemoteAddr())) {
+        RuleRuntime runtime = getRuntimeFor(rule);
+        if (!runtime.allowRequest(context.getRemoteAddr())) {
             writeErrorResponse(clientOut, HTTP_TOO_MANY_REQUESTS, "Too Many Requests");
             return null;
         }
 
-        String targetBase = rule.getTarget(context.getRemoteAddr());
+        String targetBase = runtime.resolveTarget(context.getRemoteAddr());
         if (targetBase == null) {
             writeErrorResponse(clientOut, HTTP_BAD_GATEWAY, BAD_GATEWAY_MSG);
             return null;
@@ -696,7 +713,8 @@ public class HttpProxyServer extends AbstractProxyServer {
      * correctly.
      */
     private String rewriteLocation(String location, Rule rule, RequestContext context) {
-        for (String rawTarget : rule.getAllTargets()) {
+        RuleRuntime runtime = getRuntimeFor(rule);
+        for (String rawTarget : runtime.getAllTargets()) {
             String base = rawTarget.endsWith("/")
                     ? rawTarget.substring(0, rawTarget.length() - 1)
                     : rawTarget;

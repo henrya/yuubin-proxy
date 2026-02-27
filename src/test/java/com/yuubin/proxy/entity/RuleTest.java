@@ -1,6 +1,7 @@
 package com.yuubin.proxy.entity;
 
 import com.yuubin.proxy.core.constants.LoadBalancingType;
+import com.yuubin.proxy.core.proxy.impl.http.rules.RuleRuntime;
 import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
@@ -8,6 +9,9 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+/**
+ * Tests for the {@link Rule} entity POJO.
+ */
 class RuleTest {
 
     @Test
@@ -32,7 +36,7 @@ class RuleTest {
 
         assertThat(rule.getHost()).isEqualTo("example.com");
         assertThat(rule.getPath()).isEqualTo("/api");
-        assertThat(rule.getTarget()).isEqualTo("http://b1"); // selects from targets
+        assertThat(rule.getTarget()).isEqualTo("http://backend:8080");
         assertThat(rule.getTargets()).containsExactly("http://b1", "http://b2");
         assertThat(rule.getHeaders()).containsEntry("X-Test", "value");
         assertThat(rule.isReverse()).isTrue();
@@ -68,11 +72,12 @@ class RuleTest {
         rule.setRateLimit(1.0); // 1 req/sec
         rule.setBurst(1);
 
-        assertThat(rule.allowRequest("ip1")).isTrue();
-        assertThat(rule.allowRequest("ip1")).isFalse();
+        RuleRuntime runtime = new RuleRuntime(rule);
+        assertThat(runtime.allowRequest("ip1")).isTrue();
+        assertThat(runtime.allowRequest("ip1")).isFalse();
 
         // Different IP should have its own bucket
-        assertThat(rule.allowRequest("ip2")).isTrue();
+        assertThat(runtime.allowRequest("ip2")).isTrue();
     }
 
     @Test
@@ -80,14 +85,15 @@ class RuleTest {
         Rule rule = new Rule();
         rule.setRateLimit(1.0);
 
+        RuleRuntime runtime = new RuleRuntime(rule);
         // Fill up buckets
         for (int i = 0; i < 10001; i++) {
-            rule.allowRequest("ip" + i);
+            runtime.allowRequest("ip" + i);
         }
 
         // This should trigger eviction if any are stale (none are yet, but we test the
         // branch)
-        assertThat(rule.allowRequest("ip-new")).isTrue();
+        assertThat(runtime.allowRequest("ip-new")).isTrue();
     }
 
     @Test
@@ -96,15 +102,16 @@ class RuleTest {
         rule.setTargets(List.of("http://b1", "http://b2"));
         rule.setHealthCheckPath("/health");
 
-        rule.markUnhealthy("http://b1");
-        assertThat(rule.getTarget()).isEqualTo("http://b2");
+        RuleRuntime runtime = new RuleRuntime(rule);
+        runtime.markUnhealthy("http://b1");
+        assertThat(runtime.resolveTarget(null)).isEqualTo("http://b2");
 
-        rule.markUnhealthy("http://b2");
+        runtime.markUnhealthy("http://b2");
         // Fallback to all if all are unhealthy
-        assertThat(rule.getTarget()).isIn("http://b1", "http://b2");
+        assertThat(runtime.resolveTarget(null)).isIn("http://b1", "http://b2");
 
-        rule.markHealthy("http://b1");
-        assertThat(rule.getTarget()).isEqualTo("http://b1");
+        runtime.markHealthy("http://b1");
+        assertThat(runtime.resolveTarget(null)).isEqualTo("http://b1");
     }
 
     @Test
@@ -114,13 +121,15 @@ class RuleTest {
         rule.setLoadBalancing(LoadBalancingType.CUSTOM);
         rule.setCustomLoadBalancer("com.yuubin.proxy.core.loadbalancer.RoundRobinLoadBalancer");
 
-        assertThat(rule.getTarget()).isEqualTo("http://b1");
+        RuleRuntime runtime = new RuleRuntime(rule);
+        assertThat(runtime.resolveTarget(null)).isEqualTo("http://b1");
 
         Rule rule2 = new Rule();
         rule2.setTargets(List.of("http://b1"));
         rule2.setLoadBalancing(LoadBalancingType.CUSTOM);
         rule2.setCustomLoadBalancer("invalid.ClassName");
-        assertThatThrownBy(() -> rule2.getTarget())
+        RuleRuntime runtime2 = new RuleRuntime(rule2);
+        assertThatThrownBy(() -> runtime2.resolveTarget(null))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("Failed to instantiate");
     }
@@ -131,7 +140,8 @@ class RuleTest {
         rule.setTarget("http://single");
         rule.setTargets(List.of("http://b1", "http://b2"));
 
-        assertThat(rule.getAllTargets()).containsExactlyInAnyOrder("http://single", "http://b1", "http://b2");
+        RuleRuntime runtime = new RuleRuntime(rule);
+        assertThat(runtime.getAllTargets()).containsExactlyInAnyOrder("http://single", "http://b1", "http://b2");
     }
 
     @Test

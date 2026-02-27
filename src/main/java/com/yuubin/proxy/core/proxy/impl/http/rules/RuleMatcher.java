@@ -1,4 +1,4 @@
-package com.yuubin.proxy.core.proxy.impl.http;
+package com.yuubin.proxy.core.proxy.impl.http.rules;
 
 import com.yuubin.proxy.entity.Rule;
 import java.util.List;

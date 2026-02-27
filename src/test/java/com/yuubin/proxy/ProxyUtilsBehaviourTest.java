@@ -80,27 +80,31 @@ class ProxyUtilsBehaviourTest {
     }
 
     @Test
-    @DisplayName("Rule health management correctly excludes unhealthy targets from selection")
+    @DisplayName("RuleRuntime health management correctly excludes unhealthy targets from selection")
     void rule_excludesUnhealthyTargetsAndRestoresThemWhenHealthy() {
         com.yuubin.proxy.entity.Rule rule = new com.yuubin.proxy.entity.Rule();
         rule.setTargets(java.util.List.of("t1", "t2"));
         rule.setHealthCheckPath("/health");
 
-        rule.markUnhealthy("t1");
-        assertThat(rule.getTarget(null)).isEqualTo("t2");
+        com.yuubin.proxy.core.proxy.impl.http.rules.RuleRuntime runtime = new com.yuubin.proxy.core.proxy.impl.http.rules.RuleRuntime(
+                rule);
+        runtime.markUnhealthy("t1");
+        assertThat(runtime.resolveTarget(null)).isEqualTo("t2");
 
-        rule.markHealthy("t1");
-        assertThat(rule.getTarget(null)).isIn("t1", "t2");
+        runtime.markHealthy("t1");
+        assertThat(runtime.resolveTarget(null)).isIn("t1", "t2");
     }
 
     @Test
-    @DisplayName("Rule rate limiting blocks a second request when the burst is exhausted")
+    @DisplayName("RuleRuntime rate limiting blocks a second request when the burst is exhausted")
     void rule_rateLimiting_blocksRequestsAfterBurstExhausted() {
         com.yuubin.proxy.entity.Rule rule = new com.yuubin.proxy.entity.Rule();
         rule.setRateLimit(1.0);
         rule.setBurst(1);
 
-        assertThat(rule.allowRequest("1.1.1.1")).isTrue();
-        assertThat(rule.allowRequest("1.1.1.1")).isFalse();
+        com.yuubin.proxy.core.proxy.impl.http.rules.RuleRuntime runtime = new com.yuubin.proxy.core.proxy.impl.http.rules.RuleRuntime(
+                rule);
+        assertThat(runtime.allowRequest("1.1.1.1")).isTrue();
+        assertThat(runtime.allowRequest("1.1.1.1")).isFalse();
     }
 }

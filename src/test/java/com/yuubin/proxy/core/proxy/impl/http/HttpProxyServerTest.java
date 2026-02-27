@@ -378,6 +378,7 @@ class HttpProxyServerTest {
                         BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
                     out.println("GET /lb HTTP/1.1");
                     out.println("Host: localhost:" + proxyPort);
+                    out.println("Connection: close");
                     out.println();
 
                     String line;
@@ -411,6 +412,7 @@ class HttpProxyServerTest {
                 BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
             out.println("GET /rev HTTP/1.1");
             out.println("Host: localhost:" + proxyPort);
+            out.println("Connection: close");
             out.println();
 
             String line;

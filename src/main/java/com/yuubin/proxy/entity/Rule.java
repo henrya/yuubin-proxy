@@ -1,23 +1,19 @@
 package com.yuubin.proxy.entity;
 
 import com.yuubin.proxy.core.constants.LoadBalancingType;
-import com.yuubin.proxy.core.loadbalancer.IpHashLoadBalancer;
-import com.yuubin.proxy.core.loadbalancer.RoundRobinLoadBalancer;
-import com.yuubin.proxy.core.exceptions.ProxyException;
-import com.yuubin.proxy.spi.LoadBalancer;
+import com.yuubin.proxy.config.UpstreamProxyConfig;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
-import com.yuubin.proxy.config.UpstreamProxyConfig;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Defines a routing rule for an HTTP proxy.
+ * This is a pure configuration POJO mapped from YAML; runtime behaviour
+ * (load balancing, rate limiting, health tracking) lives in
+ * {@link com.yuubin.proxy.core.proxy.impl.http.rules.RuleRuntime}.
  */
 public class Rule {
     /** The host name to match (e.g., abc.com). Null or empty matches any host. */
@@ -58,7 +54,7 @@ public class Rule {
     /** Timeout in milliseconds for each health check request. Default 5s. */
     private volatile int healthCheckTimeout = 5000;
 
-    /** Rate limit in requests per second. <= 0 means unlimited. */
+    /** Rate limit in requests per second. &lt;= 0 means unlimited. */
     private volatile double rateLimit = 0;
 
     /** Burst capacity. If 0, defaults to rateLimit (or 1). */
@@ -71,174 +67,89 @@ public class Rule {
     private volatile String customLoadBalancer;
 
     /**
-     * The instantiated load balancer strategy.
-     * Marked transient to avoid serialization by external libraries (e.g.,
-     * YAML/JSON)
-     * as it is an internal runtime state.
+     * Returns the host name pattern for this rule.
+     *
+     * @return The host name, or null if any host matches.
      */
-    private final AtomicReference<LoadBalancer> loadBalancerStrategy = new AtomicReference<>();
-
-    /** Tracks targets that are currently failing health checks. */
-    private final Set<String> unhealthyTargets = ConcurrentHashMap.newKeySet();
-
-    /**
-     * Rate Limiting State (IP -> Bucket).
-     * Buckets are lazily created and periodically evicted.
-     */
-    private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
-
     public String getHost() {
         return host;
     }
 
+    /**
+     * Sets the host name pattern for this rule.
+     *
+     * @param host The host name to match.
+     */
     public void setHost(String host) {
         this.host = host;
     }
 
+    /**
+     * Returns the path prefix for this rule.
+     *
+     * @return The path prefix.
+     */
     public String getPath() {
         return path;
     }
 
+    /**
+     * Sets the path prefix for this rule.
+     *
+     * @param path The path prefix to match.
+     */
     public void setPath(String path) {
         this.path = path;
     }
 
     /**
-     * Resolves a target using the configured load balancing strategy.
-     * 
-     * @param clientIp The client's IP address (used for IP_HASH).
-     * @return The selected target URL.
-     */
-    public String getTarget(String clientIp) {
-        List<String> activeTargets = getHealthyTargets();
-        if (activeTargets.isEmpty()) {
-            // Fall back to the raw target field when no multi-target list is configured
-            return target;
-        }
-
-        LoadBalancer strategy = loadBalancerStrategy.get();
-        if (strategy == null) {
-            strategy = createStrategy();
-            if (!loadBalancerStrategy.compareAndSet(null, strategy)) {
-                strategy = loadBalancerStrategy.get();
-            }
-        }
-        return strategy.select(activeTargets, clientIp);
-    }
-
-    /**
-     * Resolves a target using the configured strategy (defaulting clientIp to
-     * null).
-     * 
-     * @return The selected target URL.
+     * Returns the single target URL.
+     *
+     * @return The target URL, or null if not set.
      */
     public String getTarget() {
-        return getTarget(null);
+        return target;
     }
 
     /**
-     * Instantiates the appropriate load balancer based on configuration.
-     * 
-     * @return A new LoadBalancer instance.
-     */
-    private LoadBalancer createStrategy() {
-        return switch (loadBalancing) {
-            case IP_HASH -> new IpHashLoadBalancer();
-            case CUSTOM -> {
-                if (customLoadBalancer != null && !customLoadBalancer.isBlank()) {
-                    try {
-                        Class<?> clazz = Class.forName(customLoadBalancer);
-                        yield (LoadBalancer) clazz.getDeclaredConstructor().newInstance();
-                    } catch (Exception e) {
-                        throw new ProxyException("Failed to instantiate custom load balancer: " + customLoadBalancer,
-                                e);
-                    }
-                } else {
-                    yield new RoundRobinLoadBalancer();
-                }
-            }
-            default -> new RoundRobinLoadBalancer();
-        };
-    }
-
-    /**
-     * Filters targets to only include those that are currently healthy.
-     * If all targets are unhealthy, falls back to returning all of them.
-     * 
-     * @return List of healthy target URLs.
-     */
-    private List<String> getHealthyTargets() {
-        if (targets == null || targets.isEmpty()) {
-            return List.of();
-        }
-        if (healthCheckPath == null) {
-            return targets;
-        }
-        List<String> healthy = targets.stream()
-                .filter(t -> !unhealthyTargets.contains(t))
-                .toList();
-        return healthy.isEmpty() ? targets : healthy; // Fallback to all if all are "unhealthy"
-    }
-
-    /**
-     * Checks if a request is allowed under the rate limit configuration.
-     * Uses the Token Bucket algorithm.
-     * 
-     * @param clientIp The client IP address.
-     * @return true if allowed, false if limit exceeded.
-     */
-    public boolean allowRequest(String clientIp) {
-        if (rateLimit <= 0) {
-            return true;
-        }
-
-        // Evict stale buckets (idle > 60s) when the map grows beyond 1 000 unique IPs
-        // (was 10 000 — lower threshold limits GC pressure under high-unique-IP
-        // traffic).
-        if (buckets.size() > 1000) {
-            long staleThreshold = System.nanoTime() - 60_000_000_000L;
-            buckets.values().removeIf(b -> b.lastUsedNano < staleThreshold);
-        }
-        Bucket bucket = buckets.computeIfAbsent(clientIp,
-                k -> new Bucket(rateLimit, burst > 0 ? burst : (int) Math.max(1, rateLimit)));
-
-        return bucket.tryConsume(1);
-    }
-
-    /**
-     * Sets the single target URL. Also merges it into the {@code targets} list so
-     * that
-     * {@link #getTarget} only ever reads from one source, eliminating the
-     * dual-field ambiguity.
-     * 
+     * Sets the single target URL.
+     *
      * @param target The target URL.
      */
     public void setTarget(String target) {
         this.target = target;
-        if (target != null) {
-            List<String> current = this.targets != null ? new ArrayList<>(this.targets) : new ArrayList<>();
-            if (!current.contains(target)) {
-                current.addFirst(target); // Single target first for predictable ordering
-            }
-            this.targets = Collections.unmodifiableList(current);
-        }
     }
 
+    /**
+     * Returns the list of target URLs for load balancing.
+     *
+     * @return An unmodifiable list of targets, or null.
+     */
     public List<String> getTargets() {
         return targets == null ? null : Collections.unmodifiableList(targets);
     }
 
+    /**
+     * Sets the list of target URLs for load balancing.
+     *
+     * @param targets The target URL list.
+     */
     public void setTargets(List<String> targets) {
         this.targets = targets == null ? null : new ArrayList<>(targets);
     }
 
+    /**
+     * Returns the health check path.
+     *
+     * @return The health check path, or null if not configured.
+     */
     public String getHealthCheckPath() {
         return healthCheckPath;
     }
 
     /**
      * Sets the health check path and validates its format.
-     * 
+     *
      * @param healthCheckPath The path (e.g., "/health").
      */
     public void setHealthCheckPath(String healthCheckPath) {
@@ -256,113 +167,165 @@ public class Rule {
         this.healthCheckPath = healthCheckPath;
     }
 
+    /**
+     * Returns the health check interval in milliseconds.
+     *
+     * @return The interval.
+     */
     public int getHealthCheckInterval() {
         return healthCheckInterval;
     }
 
+    /**
+     * Sets the health check interval in milliseconds.
+     *
+     * @param healthCheckInterval The interval.
+     */
     public void setHealthCheckInterval(int healthCheckInterval) {
         this.healthCheckInterval = healthCheckInterval;
     }
 
+    /**
+     * Returns the health check timeout in milliseconds.
+     *
+     * @return The timeout.
+     */
     public int getHealthCheckTimeout() {
         return healthCheckTimeout;
     }
 
+    /**
+     * Sets the health check timeout in milliseconds.
+     *
+     * @param healthCheckTimeout The timeout.
+     */
     public void setHealthCheckTimeout(int healthCheckTimeout) {
         this.healthCheckTimeout = healthCheckTimeout;
     }
 
+    /**
+     * Returns the rate limit in requests per second.
+     *
+     * @return The rate limit; &lt;= 0 means unlimited.
+     */
     public double getRateLimit() {
         return rateLimit;
     }
 
+    /**
+     * Sets the rate limit in requests per second.
+     *
+     * @param rateLimit The rate limit.
+     */
     public void setRateLimit(double rateLimit) {
         this.rateLimit = rateLimit;
     }
 
+    /**
+     * Returns the burst capacity.
+     *
+     * @return The burst value.
+     */
     public int getBurst() {
         return burst;
     }
 
+    /**
+     * Sets the burst capacity.
+     *
+     * @param burst The burst value.
+     */
     public void setBurst(int burst) {
         this.burst = burst;
     }
 
+    /**
+     * Returns the load balancing strategy.
+     *
+     * @return The load balancing type.
+     */
     public LoadBalancingType getLoadBalancing() {
         return loadBalancing;
     }
 
+    /**
+     * Sets the load balancing strategy.
+     *
+     * @param loadBalancing The load balancing type.
+     */
     public void setLoadBalancing(LoadBalancingType loadBalancing) {
         this.loadBalancing = loadBalancing;
     }
 
+    /**
+     * Returns the custom load balancer class name.
+     *
+     * @return The fully qualified class name, or null.
+     */
     public String getCustomLoadBalancer() {
         return customLoadBalancer;
     }
 
+    /**
+     * Sets the custom load balancer class name.
+     *
+     * @param customLoadBalancer The fully qualified class name.
+     */
     public void setCustomLoadBalancer(String customLoadBalancer) {
         this.customLoadBalancer = customLoadBalancer;
     }
 
     /**
-     * Gets all targets configured on this rule (both the single {@code target}
-     * field
-     * and every entry in {@code targets}), deduplicated. Used by reverse-proxy
-     * Location
-     * rewriting to match any backend that may have issued a redirect.
-     * 
-     * @return Unmodifiable list of all target URLs.
+     * Returns the custom headers to add to forwarded requests.
+     *
+     * @return An unmodifiable map of headers, or null.
      */
-    public List<String> getAllTargets() {
-        List<String> all = new ArrayList<>();
-        if (targets != null) {
-            all.addAll(targets);
-        }
-        if (target != null && !all.contains(target)) {
-            all.add(target);
-        }
-        return Collections.unmodifiableList(all);
-    }
-
-    /**
-     * Marks a target as unhealthy.
-     * 
-     * @param target The target URL.
-     */
-    public void markUnhealthy(String target) {
-        unhealthyTargets.add(target);
-    }
-
-    /**
-     * Marks a target as healthy.
-     * 
-     * @param target The target URL.
-     */
-    public void markHealthy(String target) {
-        unhealthyTargets.remove(target);
-    }
-
     public Map<String, String> getHeaders() {
         return headers == null ? null : Collections.unmodifiableMap(headers);
     }
 
+    /**
+     * Sets the custom headers to add to forwarded requests.
+     *
+     * @param headers The header map.
+     */
     public void setHeaders(Map<String, String> headers) {
         this.headers = headers == null ? null : new HashMap<>(headers);
     }
 
+    /**
+     * Returns the upstream proxy configuration.
+     *
+     * @return A defensive copy of the upstream proxy config, or null.
+     */
     public UpstreamProxyConfig getUpstreamProxy() {
         return upstreamProxy == null ? null : new UpstreamProxyConfig(upstreamProxy);
     }
 
+    /**
+     * Sets the upstream proxy configuration.
+     *
+     * @param upstreamProxy The upstream proxy config.
+     */
     public void setUpstreamProxy(UpstreamProxyConfig upstreamProxy) {
         this.upstreamProxy = upstreamProxy == null ? null
                 : new UpstreamProxyConfig(upstreamProxy);
     }
 
+    /**
+     * Returns whether this is a reverse proxy rule.
+     *
+     * @return true if reverse proxying is enabled.
+     */
     public boolean isReverse() {
         return reverse;
     }
 
+    /**
+     * Sets whether this is a reverse proxy rule.
+     *
+     * @param reverse true to enable reverse proxying.
+     */
     public void setReverse(boolean reverse) {
         this.reverse = reverse;
     }
@@ -397,69 +360,5 @@ public class Rule {
         return Objects.hash(host, path, target, targets, headers, reverse, rateLimit, burst,
                 loadBalancing, healthCheckPath, healthCheckInterval, healthCheckTimeout, customLoadBalancer,
                 upstreamProxy);
-    }
-
-    /**
-     * Simple thread-safe Token Bucket implementation.
-     */
-    private static class Bucket {
-        /** Maximum capacity of the bucket. */
-        private final double capacity;
-        /** Token generation rate per nanosecond. */
-        private final double tokensPerNano;
-
-        /** Current available tokens. */
-        private double tokens;
-        /** Timestamp of the last refill operation. */
-        private long lastRefillTime;
-        /**
-         * Last time this bucket was accessed, in nanoseconds.
-         * Used for stale-entry eviction. Marked volatile for thread-safe reading by
-         * eviction logic.
-         */
-        volatile long lastUsedNano;
-
-        /**
-         * Creates a new Bucket.
-         * 
-         * @param rate     Token refill rate per second.
-         * @param capacity Maximum tokens the bucket can hold.
-         */
-        Bucket(double rate, double capacity) {
-            this.capacity = capacity;
-            this.tokensPerNano = rate / 1_000_000_000.0;
-            this.tokens = capacity;
-            this.lastRefillTime = System.nanoTime();
-            this.lastUsedNano = this.lastRefillTime;
-        }
-
-        /**
-         * Attempts to consume tokens from the bucket.
-         * 
-         * @param cost Number of tokens to consume.
-         * @return true if successful, false otherwise.
-         */
-        synchronized boolean tryConsume(double cost) {
-            lastUsedNano = System.nanoTime();
-            refill();
-            if (tokens >= cost) {
-                tokens -= cost;
-                return true;
-            }
-            return false;
-        }
-
-        /**
-         * Refills the bucket based on elapsed time.
-         */
-        private void refill() {
-            long now = System.nanoTime();
-            long delta = now - lastRefillTime;
-            if (delta > 0) {
-                double newTokens = delta * tokensPerNano;
-                tokens = Math.min(capacity, tokens + newTokens);
-                lastRefillTime = now;
-            }
-        }
     }
 }

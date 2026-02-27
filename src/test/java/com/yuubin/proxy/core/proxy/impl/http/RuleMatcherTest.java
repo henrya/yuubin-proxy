@@ -1,5 +1,6 @@
 package com.yuubin.proxy.core.proxy.impl.http;
 
+import com.yuubin.proxy.core.proxy.impl.http.rules.RuleMatcher;
 import com.yuubin.proxy.entity.Rule;
 import org.junit.jupiter.api.Test;
 
