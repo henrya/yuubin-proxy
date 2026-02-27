@@ -90,7 +90,7 @@ public class UpstreamConnector {
         out.flush();
 
         String line = IoUtils.readLine(socket.getInputStream());
-        if (line == null || !line.contains("200")) {
+        if (line == null || !line.startsWith("HTTP/") || !extractStatusCode(line).equals("200")) {
             throw new IOException("Failed to connect via upstream HTTP proxy: " + line);
         }
         // Skip remaining headers
@@ -146,5 +146,17 @@ public class UpstreamConnector {
             in.readFully(new byte[16]);
         }
         in.readUnsignedShort(); // BND.PORT
+    }
+
+    /**
+     * Extracts the HTTP status code from a status line (e.g., "HTTP/1.1 200 OK" →
+     * "200").
+     *
+     * @param statusLine The HTTP status line.
+     * @return The status code string, or an empty string if unparseable.
+     */
+    private static String extractStatusCode(String statusLine) {
+        String[] parts = statusLine.split(" ", 3);
+        return parts.length >= 2 ? parts[1] : "";
     }
 }

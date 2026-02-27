@@ -240,8 +240,7 @@ public class Socks4ProxyServer extends AbstractProxyServer {
      * @throws IOException If an I/O error occurs.
      */
     private void handleConnect(Socket client, DataOutputStream out, Socks4Request request) throws IOException {
-        try {
-            Socket target = connectToTarget(request.targetHost(), request.port());
+        try (Socket target = connectToTarget(request.targetHost(), request.port())) {
             target.setTcpNoDelay(true);
 
             // Reply success (90 = Request granted)

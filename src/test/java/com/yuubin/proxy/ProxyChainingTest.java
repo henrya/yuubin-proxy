@@ -28,6 +28,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import java.time.Duration;
 
+import com.yuubin.proxy.entity.Rule;
+
 class ProxyChainingTest {
 
     private static ProxyManager manager;
@@ -64,6 +66,8 @@ class ProxyChainingTest {
                 .willReturn(aResponse().withStatus(200).withBody("DIRECT OK")));
         wireMock.stubFor(get(urlEqualTo("/chainedRule/"))
                 .willReturn(aResponse().withStatus(200).withBody("CHAINED RULE OK")));
+        wireMock.stubFor(get(urlEqualTo("/chainedHostRule/"))
+                .willReturn(aResponse().withStatus(200).withBody("CHAINED HOST RULE OK")));
 
         YuubinProperties props = new YuubinProperties();
 
@@ -107,11 +111,11 @@ class ProxyChainingTest {
         ruleDownstream.setPort(ruleDownstreamPort);
         ruleDownstream.setType("HTTP");
 
-        com.yuubin.proxy.entity.Rule directRule = new com.yuubin.proxy.entity.Rule();
+        Rule directRule = new Rule();
         directRule.setPath("/route-direct");
         directRule.setTarget("http://localhost:" + targetPort + "/direct");
 
-        com.yuubin.proxy.entity.Rule chainedRule = new com.yuubin.proxy.entity.Rule();
+        Rule chainedRule = new Rule();
         chainedRule.setPath("/route-chained");
         chainedRule.setTarget("http://localhost:" + targetPort + "/chainedRule");
         UpstreamProxyConfig ruleChain = new UpstreamProxyConfig();
@@ -120,7 +124,16 @@ class ProxyChainingTest {
         ruleChain.setType("HTTP");
         chainedRule.setUpstreamProxy(ruleChain);
 
-        ruleDownstream.setRules(List.of(directRule, chainedRule));
+        Rule chainedHostRule = new Rule();
+        chainedHostRule.setHost("example.local");
+        chainedHostRule.setTarget("http://localhost:" + targetPort);
+        UpstreamProxyConfig hostRuleChain = new UpstreamProxyConfig();
+        hostRuleChain.setHost("localhost");
+        hostRuleChain.setPort(upstreamPort);
+        hostRuleChain.setType("HTTP");
+        chainedHostRule.setUpstreamProxy(hostRuleChain);
+
+        ruleDownstream.setRules(List.of(directRule, chainedRule, chainedHostRule));
 
         props.setProxies(List.of(upstream, downstream, socksUpstream, socksDownstream, ruleDownstream));
 
@@ -264,6 +277,28 @@ class ProxyChainingTest {
             int read = br.read(buffer);
             String body = new String(buffer, 0, read);
             assertThat(body).contains("CHAINED RULE OK");
+        }
+
+        // Host-based chained rule
+        try (Socket s = new Socket("localhost", ruleDownstreamPort);
+                PrintWriter pw = new PrintWriter(s.getOutputStream(), true);
+                BufferedReader br = new BufferedReader(new InputStreamReader(s.getInputStream()))) {
+
+            pw.println("GET http://example.local/chainedHostRule/ HTTP/1.1");
+            pw.println("Host: example.local");
+            pw.println();
+
+            String line = br.readLine();
+            assertThat(line).contains("200");
+
+            while ((line = br.readLine()) != null && !line.isEmpty()) {
+                // skip headers
+            }
+
+            char[] buffer = new char[1024];
+            int read = br.read(buffer);
+            String body = new String(buffer, 0, read);
+            assertThat(body).contains("CHAINED HOST RULE OK");
         }
     }
 }

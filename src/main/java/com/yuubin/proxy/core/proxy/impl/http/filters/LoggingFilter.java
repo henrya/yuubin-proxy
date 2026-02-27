@@ -1,6 +1,9 @@
 package com.yuubin.proxy.core.proxy.impl.http.filters;
 
+import java.io.IOException;
 import java.io.OutputStream;
+
+import com.yuubin.proxy.core.exceptions.ProxyException;
 
 import com.yuubin.proxy.core.services.LoggingService;
 
@@ -17,7 +20,7 @@ public class LoggingFilter implements HttpFilter {
 
     @Override
     public boolean preHandle(RequestContext context, OutputStream clientOut)
-            throws java.io.IOException, com.yuubin.proxy.core.exceptions.ProxyException {
+            throws IOException, ProxyException {
         return true; // No pre-handling needed for logging
     }
 

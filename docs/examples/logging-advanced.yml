@@ -1,6 +1,19 @@
+# ==============================================================================
 # Advanced Logging Example
-# Use case: Customizing log formats to include HTTP methods and query parameters, 
-# and enabling full response logging for auditing.
+# ==============================================================================
+# Use case: Customizing Apache-style access log formats, enabling file rotation,
+# and auditing response details.
+#
+# Format tokens:
+#   %h  = Remote host (client IP)
+#   %l  = Remote logname (always "-")
+#   %u  = Authenticated username (or "-")
+#   %t  = Timestamp [dd/MMM/yyyy:HH:mm:ss Z]
+#   %r  = Full request line (e.g., "GET /path HTTP/1.1")
+#   %m  = Request method (e.g., GET, POST)
+#   %q  = Query string (e.g., ?id=123)
+#   %>s = Response status code
+#   %b  = Response body size in bytes (or "-")
 
 proxies:
   - name: verbose-proxy
@@ -11,17 +24,19 @@ proxies:
         target: http://localhost:3000
 
 logging:
-  # %m = Request Method (e.g., GET)
-  # %q = Query String (e.g., ?id=123)
-  # Default Apache format plus custom tokens
+  # Custom Apache-style format with method and query string
   format: '%h %l %u %t "%m %r%q" %>s %b'
-  
-  # Enable separate log lines for response details
+
+  # Log a separate [RESPONSE] line for each request (useful for auditing)
   logResponse: true
-  
-  # File logging configuration
+
+  # File rotation via Logback's built-in async appender
   fileEnabled: true
-  filePath: "logs/advanced"
-  fileName: "access.log"
-  rotation: "DAILY"
-  maxHistory: 7
+  filePath: "logs/advanced"          # Directory for log files
+  fileName: "access.log"            # Base filename
+  rotation: "DAILY"                 # DAILY, WEEKLY, MONTHLY, or SIZE
+  maxHistory: 7                     # Keep 7 rotated files
+
+  # For SIZE rotation, also set:
+  # rotation: "SIZE"
+  # maxSize: "100MB"                # Max size per file before rotation

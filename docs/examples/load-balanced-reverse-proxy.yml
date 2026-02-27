@@ -1,5 +1,10 @@
+# ==============================================================================
 # Load Balanced Reverse Proxy Example
-# Use case: Distributing traffic across multiple backend nodes with sticky sessions.
+# ==============================================================================
+# Use case: Distributing incoming traffic across multiple backend nodes
+# with sticky sessions and automatic health checks.
+#
+# Load balancing strategies: ROUND_ROBIN (default), IP_HASH, CUSTOM
 
 proxies:
   - name: production-api
@@ -7,12 +12,22 @@ proxies:
     type: HTTP
     rules:
       - path: /
+        # Multiple targets for load balancing (replaces single 'target' field)
         targets:
           - http://backend-srv-1:8080
           - http://backend-srv-2:8080
           - http://backend-srv-3:8080
-        loadBalancing: IP_HASH # Ensure same client IP always hits same backend
-        healthCheckPath: /health
-        healthCheckInterval: 5000 # Check every 5s
-        healthCheckTimeout: 2000
-        reverse: true # Rewrite Location headers in responses
+
+        # IP_HASH ensures the same client IP always reaches the same backend
+        # (sticky sessions). Use ROUND_ROBIN for stateless backends.
+        loadBalancing: IP_HASH
+
+        # Health checks — unhealthy targets are automatically skipped.
+        # If all targets are unhealthy, falls back to using all of them.
+        healthCheckPath: /health       # Backend endpoint to probe
+        healthCheckInterval: 5000      # Probe interval in ms (default: 10000)
+        healthCheckTimeout: 2000       # Timeout per check in ms (default: 5000)
+
+        # Reverse proxy mode — rewrites Location headers in backend responses
+        # so redirects point to the proxy's address, not the backend's.
+        reverse: true

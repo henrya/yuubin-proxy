@@ -6,12 +6,23 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Base64;
+import java.nio.file.Path;
+import java.nio.file.Files;
+import java.util.stream.Stream;
+import java.util.Comparator;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.CountDownLatch;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import com.yuubin.proxy.core.exceptions.ConfigException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 class AuthServiceTest {
-
     private AuthService authService;
     private YuubinProperties properties;
 
@@ -85,8 +96,8 @@ class AuthServiceTest {
         assertThat(authService.userExists(".hidden")).isFalse();
 
         // Cleanup
-        java.util.Comparator<java.nio.file.Path> comparator = java.util.Comparator.reverseOrder();
-        try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(tempDir)) {
+        Comparator<Path> comparator = Comparator.reverseOrder();
+        try (Stream<Path> walk = Files.walk(tempDir)) {
             walk.sorted(comparator).forEach(path -> {
                 try {
                     java.nio.file.Files.delete(path);
@@ -139,7 +150,7 @@ class AuthServiceTest {
         properties.getAuth().setUsersPath(tempFile.toAbsolutePath().toString());
 
         assertThatCode(() -> authService.reload())
-                .isInstanceOf(com.yuubin.proxy.core.exceptions.ConfigException.class)
+                .isInstanceOf(ConfigException.class)
                 .hasMessageContaining("Invalid YAML syntax in users file");
 
         java.nio.file.Files.deleteIfExists(tempFile);
@@ -206,9 +217,9 @@ class AuthServiceTest {
         String header = "Basic " + Base64.getEncoder().encodeToString("admin:pass".getBytes());
 
         // Hammer authenticate from multiple threads while reload() runs concurrently
-        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(8);
-        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
-        java.util.List<java.util.concurrent.Future<?>> futures = new java.util.ArrayList<>();
+        ExecutorService pool = Executors.newFixedThreadPool(8);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<?>> futures = new ArrayList<>();
 
         for (int i = 0; i < 6; i++) {
             futures.add(pool.submit(() -> {
@@ -230,7 +241,7 @@ class AuthServiceTest {
         start.countDown();
         assertThatCode(() -> {
             for (var f : futures) {
-                f.get(5, java.util.concurrent.TimeUnit.SECONDS);
+                f.get(5, TimeUnit.SECONDS);
             }
         }).doesNotThrowAnyException();
         pool.shutdown();

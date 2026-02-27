@@ -17,7 +17,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Service providing application metrics via Micrometer and a simple HTTP admin server.
+ * Service providing application metrics via Micrometer and a simple HTTP admin
+ * server.
  */
 public class MetricsService {
     private static final Logger log = LoggerFactory.getLogger(MetricsService.class);
@@ -37,8 +38,8 @@ public class MetricsService {
         }
 
         try {
-            this.adminServer = HttpServer.create(new InetSocketAddress(config.getPort()), 0);
-            
+            this.adminServer = HttpServer.create(new InetSocketAddress(config.getBindAddress(), config.getPort()), 0);
+
             // Health check endpoint
             adminServer.createContext("/health", exchange -> {
                 byte[] response = "OK".getBytes(StandardCharsets.UTF_8);
@@ -73,7 +74,8 @@ public class MetricsService {
 
     public void updateProperties(YuubinProperties properties) {
         AdminConfig newConfig = properties.getAdmin();
-        if (newConfig.isEnabled() != config.isEnabled() || newConfig.getPort() != config.getPort()) {
+        if (newConfig.isEnabled() != config.isEnabled() || newConfig.getPort() != config.getPort()
+                || !java.util.Objects.equals(newConfig.getBindAddress(), config.getBindAddress())) {
             shutdown();
             this.config = newConfig;
             setupAdminServer();

@@ -63,7 +63,7 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.5.15</version>
+            <version>1.5.32</version>
         </dependency>
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>
@@ -167,6 +167,7 @@
                             <descriptors>
                                 <descriptor>src/main/assembly/distribution.xml</descriptor>
                             </descriptors>
+                            <tarLongFileMode>posix</tarLongFileMode>
                         </configuration>
                     </execution>
                 </executions>

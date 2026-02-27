@@ -227,8 +227,7 @@ public class Socks5ProxyServer extends AbstractProxyServer {
      * @throws IOException If an I/O error occurs.
      */
     private void handleConnect(Socket client, DataOutputStream out, Socks5Request request) throws IOException {
-        try {
-            Socket target = connectToTarget(request.host(), request.port());
+        try (Socket target = connectToTarget(request.host(), request.port())) {
             target.setTcpNoDelay(true);
 
             out.writeByte(5);

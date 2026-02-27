@@ -1,0 +1,41 @@
+# ==============================================================================
+# IP Blacklisting & Admin Server Example
+# ==============================================================================
+# Use case: Blocking known-bad IPs at the proxy level before they reach
+# any backend, and exposing Prometheus metrics for monitoring.
+#
+# Blacklists support two scopes:
+#   1. globalBlacklist — applies to ALL proxy instances
+#   2. per-proxy blacklist — applies only to that proxy
+
+# Global blacklist — blocks these IPs across every proxy in this config
+globalBlacklist:
+  - 192.168.1.100
+  - 10.0.0.99
+
+proxies:
+  - name: guarded-proxy
+    port: 8080
+    type: HTTP
+    timeout: 60000
+    maxConnections: 10000
+
+    # Per-proxy blacklist — additional IPs blocked only on this proxy
+    blacklist:
+      - 172.16.0.50
+      - 172.16.0.51
+
+    rules:
+      - path: /
+        target: http://backend:8080
+
+# Admin / Metrics server
+# Exposes:
+#   GET /health  — returns "OK" (for liveness/readiness probes)
+#   GET /metrics — Prometheus-format metrics (connections, traffic, errors)
+admin:
+  enabled: true
+  port: 9090
+  # Bind to loopback by default for security.
+  # Set to "0.0.0.0" if Prometheus scrapes from a different host.
+  bindAddress: "127.0.0.1"

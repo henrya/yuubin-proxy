@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import com.yuubin.proxy.config.UpstreamProxyConfig;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -35,7 +36,7 @@ public class Rule {
     private Map<String, String> headers;
 
     /** Upstream proxy to use when this rule matches. */
-    private com.yuubin.proxy.config.UpstreamProxyConfig upstreamProxy;
+    private UpstreamProxyConfig upstreamProxy;
 
     /**
      * Whether to treat this as a reverse proxy rule.
@@ -349,13 +350,13 @@ public class Rule {
         this.headers = headers == null ? null : new HashMap<>(headers);
     }
 
-    public com.yuubin.proxy.config.UpstreamProxyConfig getUpstreamProxy() {
-        return upstreamProxy == null ? null : new com.yuubin.proxy.config.UpstreamProxyConfig(upstreamProxy);
+    public UpstreamProxyConfig getUpstreamProxy() {
+        return upstreamProxy == null ? null : new UpstreamProxyConfig(upstreamProxy);
     }
 
-    public void setUpstreamProxy(com.yuubin.proxy.config.UpstreamProxyConfig upstreamProxy) {
+    public void setUpstreamProxy(UpstreamProxyConfig upstreamProxy) {
         this.upstreamProxy = upstreamProxy == null ? null
-                : new com.yuubin.proxy.config.UpstreamProxyConfig(upstreamProxy);
+                : new UpstreamProxyConfig(upstreamProxy);
     }
 
     public boolean isReverse() {

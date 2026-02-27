@@ -62,7 +62,7 @@ Yuubin Proxy is a lightweight, high-performance multi-protocol proxy server impl
 +-------------+-------------+        | # loggingService     |
 | LoggingService            |        | # executor           |
 +---------------------------+        | # connectionSemaphore|
-| - logQueue: BlockingQueue |        +-----+-------+------+-+
+| - cachedTimestamp: Atomic |        +-----+-------+------+-+
 +---------------------------+              ^       ^      ^
                                            |       |      | extends
                                            |       |      +-----------------------+
@@ -120,8 +120,9 @@ Yuubin Proxy is a lightweight, high-performance multi-protocol proxy server impl
 - **HTTP/HTTPS (`HttpProxyServer`)**:
     - Uses a **Filter Chain** (Authentication, Logging).
     - Implements a custom **Rule-based Router** supporting host and path matching.
+    - **HTTPS CONNECT** tunneling respects host-based routing rules, automatically applying per-host upstream proxies.
     - Supports **WebSocket** tunneling.
-    - Handles **HTTPS CONNECT** for L4 tunneling.
+    - Rejects duplicate security-sensitive headers (e.g., `Proxy-Authorization`) to prevent injection attacks.
 - **SOCKS (`Socks4ProxyServer`, `Socks5ProxyServer`)**:
     - RFC-compliant implementations for SOCKS4, SOCKS4a, and SOCKS5.
     - Supports Username/Password authentication for SOCKS5.
@@ -135,8 +136,8 @@ Yuubin Proxy is a lightweight, high-performance multi-protocol proxy server impl
 
 ### 6. Support Services
 - **AuthService**: Manages user credentials from YAML, Environment Variables, or mounted directories. Uses constant-time equality checks for password validation.
-- **LoggingService**: Extends the **Logback Engine** securely using **`AsyncAppender`**s around `RollingFileAppender` and `ConsoleAppender`. It dynamically instantiates rotation policies from YAML rather than requiring a static `logback.xml` file, keeping the deployment minimal.
-- **MetricsService**: Integrated Micrometer support with a Prometheus endpoint and health check listener.
+- **LoggingService**: Extends the **Logback Engine** securely using **`AsyncAppender`**s around `RollingFileAppender` and `ConsoleAppender`. It dynamically instantiates rotation policies from YAML rather than requiring a static `logback.xml` file, keeping the deployment minimal. Timestamp caching uses an `AtomicReference`-based record for thread-safe, lock-free access.
+- **MetricsService**: Integrated Micrometer support with a Prometheus endpoint and health check listener. Admin server binds to `127.0.0.1` by default for security; configurable via `admin.bindAddress`.
 
 ## Data Flow (HTTP Example)
 

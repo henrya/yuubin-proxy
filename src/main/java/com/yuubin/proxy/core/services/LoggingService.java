@@ -38,10 +38,30 @@ public class LoggingService {
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MMM/yyyy:HH:mm:ss Z");
 
     /**
-     * Cached formatted timestamp, refreshed at most once per second.
+     * Atomic container for cached timestamp to avoid race conditions
+     * between the second value and formatted string.
      */
-    private volatile String cachedTimestamp = "";
-    private volatile long cachedTimestampSec = 0;
+    private record TimestampCache(long epochSecond, String formatted) {
+    }
+
+    private final AtomicReference<TimestampCache> cachedTimestamp = new AtomicReference<>(
+            new TimestampCache(0, ""));
+
+    /**
+     * Gets a formatted timestamp string for the current second.
+     * Uses an atomic record swap to avoid races between the epoch-second
+     * check and the formatted string read.
+     */
+    private String getCachedTimestamp() {
+        long nowSec = java.time.Instant.now().getEpochSecond();
+        TimestampCache current = cachedTimestamp.get();
+        if (nowSec != current.epochSecond()) {
+            String formatted = ZonedDateTime.now().format(DATE_FORMATTER);
+            cachedTimestamp.set(new TimestampCache(nowSec, formatted));
+            return formatted;
+        }
+        return current.formatted();
+    }
 
     /**
      * Initializes the LoggingService with the provided configuration.
@@ -272,18 +292,6 @@ public class LoggingService {
             }
         }
         return currentIdx + skip + 1;
-    }
-
-    /**
-     * Returns a formatted timestamp string for the current second.
-     */
-    private String getCachedTimestamp() {
-        long nowSec = java.time.Instant.now().getEpochSecond();
-        if (nowSec != cachedTimestampSec) {
-            cachedTimestampSec = nowSec;
-            cachedTimestamp = ZonedDateTime.now().format(DATE_FORMATTER);
-        }
-        return cachedTimestamp;
     }
 
     /**

@@ -1,15 +1,28 @@
+# ==============================================================================
 # Rate Limited & TLS Protected Proxy Example
-# Use case: Protecting a backend from high-frequency requests and encrypting traffic.
+# ==============================================================================
+# Use case: Protecting a backend from high-frequency requests (DDoS, scraping)
+# while encrypting all traffic with TLS v1.3.
+#
+# TLS requires a PKCS12 (.p12) keystore file.
+
+# Directory where keystore files are located (relative paths resolved from here)
+certificatesPath: "/etc/yuubin-proxy/certs"
 
 proxies:
   - name: secure-rate-limited
     port: 443
     type: HTTP
+
+    # TLS configuration — enforces TLS v1.3 exclusively
     tlsEnabled: true
-    keystorePath: server-certs.p12
+    keystorePath: server-certs.p12   # Relative to certificatesPath, or absolute
     keystorePassword: "changeit"
+
     rules:
       - path: /api/search
         target: http://internal-search-srv:9000
-        rateLimit: 10.0 # 10 requests per second per client IP
-        burst: 20       # Allow occasional bursts up to 20
+
+        # Token Bucket rate limiting (per client IP)
+        rateLimit: 10.0              # Sustained rate: 10 requests/second
+        burst: 20                    # Allow bursts up to 20 requests

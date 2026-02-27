@@ -1,11 +1,21 @@
+# ==============================================================================
 # Secure SOCKS5 Proxy Example
-# Use case: Providing an authenticated egress point for tools or scrapers.
+# ==============================================================================
+# Use case: Providing an authenticated egress point for tools, scripts,
+# or browsers that support SOCKS5 proxying.
+#
+# Requires auth.enabled = true and a users source (see Kubernetes example).
+
+auth:
+  enabled: true
+  usersPath: users.yml             # YAML file with user credentials
 
 proxies:
   - name: secure-socks
     port: 1080
     type: SOCKS5
-    authEnabled: true # Requires users defined in users.yml
-    timeout: 30000   # 30s timeout
+    authEnabled: true              # Enforce authentication for this proxy
+    timeout: 30000                 # Socket timeout in ms (protects against Slowloris)
+    maxConnections: 5000           # Maximum concurrent connections (default: 10000)
     blacklist:
-      - 10.0.0.50    # Block internal malicious actor
+      - 10.0.0.50                  # Block specific internal IPs

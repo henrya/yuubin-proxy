@@ -8,23 +8,35 @@ This folder contains documentation for various configuration scenarios. The YAML
 
 ## 2. API Gateway & Virtual Hosts
 **File:** [examples/api-gateway-routing.yml](examples/api-gateway-routing.yml)  
-**Description:** Demonstrates host-based and path-based routing. Routes `api.example.com` differently based on the version path (`/v1` vs `/v2`) and handles `web.example.com` separately.
+**Description:** Demonstrates host-based and path-based routing. Routes `api.example.com` differently based on the version path (`/v1` vs `/v2`) and handles `web.example.com` separately. Includes the rule matching priority order.
 
 ## 3. Secure SOCKS5 Proxy
 **File:** [examples/secure-socks5-proxy.yml](examples/secure-socks5-proxy.yml)  
-**Description:** A classic SOCKS5 proxy configuration with mandatory username/password authentication enabled.
+**Description:** A classic SOCKS5 proxy configuration with mandatory username/password authentication and IP blacklisting.
 
 ## 4. Rate Limiting & TLS (HTTPS)
 **File:** [examples/rate-limited-tls-proxy.yml](examples/rate-limited-tls-proxy.yml)  
-**Description:** Configures an HTTPS endpoint (TLS v1.3). It includes a per-IP rate limit on the `/api/search` path to prevent DDoS or scraping abuse.
+**Description:** Configures an HTTPS endpoint (TLS v1.3) with a PKCS12 keystore. Includes a per-IP Token Bucket rate limit on the `/api/search` path to prevent DDoS or scraping abuse.
 
 ## 5. Proxy Chaining (Upstream)
 **File:** [examples/proxy-chaining-upstream.yml](examples/proxy-chaining-upstream.yml)  
-**Description:** Useful in corporate environments where you must route external requests through a central parent proxy.
+**Description:** Useful in corporate environments where outbound requests must be routed through a parent proxy. Demonstrates both server-level chaining (all traffic) and rule-level chaining (per-path and per-host). Includes host-based rules that also apply to HTTPS CONNECT tunnels.
 
 ## 6. Advanced Logging
-**File:** [examples/logging-advanced.yml](examples/logging-advanced.yml)
-**Description:** Showcases custom log formats including request methods, query parameters, optional response auditing, and configuring log file rotation size and history via Logback securely.
+**File:** [examples/logging-advanced.yml](examples/logging-advanced.yml)  
+**Description:** Showcases custom Apache-style log formats with a complete token reference (`%h`, `%m`, `%q`, `%>s`, etc.), optional response auditing, and Logback-based file rotation (daily, weekly, monthly, or size-based).
+
+## 7. Kubernetes-Ready Authentication
+**File:** [examples/kubernetes-auth.yml](examples/kubernetes-auth.yml)  
+**Description:** Demonstrates the three authentication sources: YAML files, Kubernetes ConfigMap/Secret directory mounts, and environment variables. Runs both HTTP and SOCKS5 proxies with auth enabled and exposes a `/health` endpoint for K8s liveness probes.
+
+## 8. IP Blacklisting & Admin Server
+**File:** [examples/ip-blacklist-admin.yml](examples/ip-blacklist-admin.yml)  
+**Description:** Shows how to block known-bad IPs at two scopes: globally (across all proxies) and per-proxy. Also configures the built-in admin server with `/health` and `/metrics` (Prometheus) endpoints.
+
+## 9. Proxy Certificates (Netskope / Zscaler)
+**File:** [examples/proxy-certificates.yml](examples/proxy-certificates.yml)  
+**Description:** Step-by-step guide for running Yuubin Proxy behind enterprise TLS-intercepting proxies (Netskope, Zscaler, BlueCoat). Explains how to create a custom PKCS12 truststore with the enterprise CA certificate and pass it to the JVM, so upstream HTTPS connections are accepted without `PKIX path validation failed` errors.
 
 ---
 

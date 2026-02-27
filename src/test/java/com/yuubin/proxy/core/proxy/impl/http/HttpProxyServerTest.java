@@ -323,4 +323,105 @@ class HttpProxyServerTest {
             assertThat(in.readLine()).contains("502");
         }
     }
+
+    @Test
+    void proxy_injectsCustomHeaders() throws Exception {
+        Rule rule = new Rule();
+        rule.setPath("/");
+        rule.setTarget("http://localhost:" + targetPort);
+        rule.setHeaders(java.util.Map.of("X-Custom-Header", "TestValue"));
+        config.setRules(java.util.List.of(rule));
+
+        stubFor(get(urlEqualTo("/custom-header"))
+                .withHeader("X-Custom-Header", equalTo("TestValue"))
+                .willReturn(aResponse().withStatus(200)));
+
+        try (Socket socket = new Socket("localhost", proxyPort);
+                PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+            out.println("GET /custom-header HTTP/1.1");
+            out.println("Host: localhost");
+            out.println();
+            String responseLine = in.readLine();
+            if (!responseLine.contains("200")) {
+                System.out.println("TEST FAILURE: Expected 200, got " + responseLine);
+                String line;
+                while ((line = in.readLine()) != null) {
+                    System.out.println(line);
+                }
+            }
+            assertThat(responseLine).contains("200");
+        }
+    }
+
+    @Test
+    void proxy_loadBalancesAcrossTargets() throws Exception {
+        WireMockServer wireMock2 = new WireMockServer(wireMockConfig().dynamicPort());
+        wireMock2.start();
+        int targetPort2 = wireMock2.port();
+
+        try {
+            stubFor(get(urlEqualTo("/lb"))
+                    .willReturn(aResponse().withStatus(200).withHeader("Content-Length", "2").withBody("T1")));
+            wireMock2.stubFor(get(urlEqualTo("/lb"))
+                    .willReturn(aResponse().withStatus(200).withHeader("Content-Length", "2").withBody("T2")));
+
+            Rule rule = new Rule();
+            rule.setPath("/");
+            rule.setTargets(java.util.List.of("http://localhost:" + targetPort, "http://localhost:" + targetPort2));
+            config.setRules(java.util.List.of(rule));
+
+            java.util.Set<String> bodies = new java.util.HashSet<>();
+            for (int i = 0; i < 4; i++) {
+                try (Socket socket = new Socket("localhost", proxyPort);
+                        PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+                        BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+                    out.println("GET /lb HTTP/1.1");
+                    out.println("Host: localhost:" + proxyPort);
+                    out.println();
+
+                    String line;
+                    while ((line = in.readLine()) != null && !line.isEmpty())
+                        ;
+
+                    String body = in.lines().collect(java.util.stream.Collectors.joining("\n")).trim();
+                    bodies.add(body);
+                }
+            }
+            assertThat(bodies).containsExactlyInAnyOrder("T1", "T2");
+        } finally {
+            wireMock2.stop();
+        }
+    }
+
+    @Test
+    void proxy_rewritesLocationHeaderInReverseMode() throws Exception {
+        Rule rule = new Rule();
+        rule.setPath("/");
+        rule.setTarget("http://localhost:" + targetPort);
+        rule.setReverse(true);
+        config.setRules(java.util.List.of(rule));
+
+        stubFor(get(urlEqualTo("/rev"))
+                .willReturn(aResponse().withStatus(302).withHeader("Location",
+                        "http://localhost:" + targetPort + "/redirected")));
+
+        try (Socket socket = new Socket("localhost", proxyPort);
+                PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+            out.println("GET /rev HTTP/1.1");
+            out.println("Host: localhost:" + proxyPort);
+            out.println();
+
+            String line;
+            boolean foundLocation = false;
+            while ((line = in.readLine()) != null && !line.isEmpty()) {
+                if (line.toLowerCase().startsWith("location:")) {
+                    assertThat(line).contains("http://localhost:" + proxyPort + "/redirected");
+                    foundLocation = true;
+                }
+            }
+            assertThat(foundLocation).isTrue();
+        }
+    }
 }

@@ -1,24 +1,32 @@
+# ==============================================================================
 # API Gateway / Virtual Host Routing Example
+# ==============================================================================
 # Use case: Routing different domains and subpaths to specific microservices.
+#
+# Rule matching priority:
+#   1. Rules with a host defined are preferred over host-wildcards
+#   2. Rules with a path defined are preferred over path-wildcards
+#   3. Longer paths are preferred over shorter paths (most specific wins)
 
 proxies:
   - name: edge-gateway
     port: 8080
     type: HTTP
     rules:
-      # Route api.example.com/v1 to Service A
+      # Route api.example.com/v1/* to Service A
       - host: api.example.com
         path: /v1
         target: http://service-a:3000
+        # Custom headers injected into every forwarded request
         headers:
           X-Gateway-Node: edge-01
-      
-      # Route api.example.com/v2 to Service B
+
+      # Route api.example.com/v2/* to Service B
       - host: api.example.com
         path: /v2
         target: http://service-b:4000
-      
-      # Default routing for web.example.com
+
+      # Default catch-all for web.example.com
       - host: web.example.com
         path: /
         target: http://static-web-srv:80

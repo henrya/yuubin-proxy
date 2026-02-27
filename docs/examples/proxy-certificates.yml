@@ -1,0 +1,110 @@
+# ==============================================================================
+# Proxy Certificates Example
+# ==============================================================================
+# Use case: Corporate environments where an enterprise proxy (Netskope, Zscaler,
+# BlueCoat, etc.) performs TLS interception. These proxies re-sign HTTPS traffic
+# with their own CA certificate, causing the default truststore to reject
+# upstream connections with "PKIX path validation failed" errors.
+#
+# Solution: Import the enterprise CA certificate into a custom PKCS12 truststore
+# and configure the runtime to use it.
+#
+# ── Step 1: Obtain the enterprise CA certificate ──────────────────────────────
+# Export the CA from your browser or ask your IT team for the .crt / .pem file.
+#
+# ── Step 2: Create a PKCS12 truststore with the CA ───────────────────────────
+# Import the enterprise CA into a new truststore (include the default JDK CAs too):
+#
+#   # Copy the default JDK cacerts as a baseline
+#   cp $JAVA_HOME/lib/security/cacerts certificates/truststore.p12
+#
+#   # Import the enterprise proxy CA certificate
+#   keytool -importcert \
+#     -alias netskope-ca \
+#     -file /path/to/netskope-root-ca.crt \
+#     -keystore certificates/truststore.p12 \
+#     -storetype PKCS12 \
+#     -storepass changeit \
+#     -noprompt
+#
+# ── Step 3: Configure the runtime to use the custom truststore ───────────────
+#
+# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │  JVM Distribution (.tar.gz / .zip / Docker)                                │
+# ├─────────────────────────────────────────────────────────────────────────────┤
+# │  Pass the truststore as JVM system properties:                             │
+# │                                                                            │
+# │  Option A — Environment variable (recommended for Docker / K8s):           │
+# │    export JAVA_OPTS="\                                                     │
+# │      -Djavax.net.ssl.trustStore=/etc/yuubin-proxy/certs/truststore.p12 \   │
+# │      -Djavax.net.ssl.trustStorePassword=changeit \                         │
+# │      -Djavax.net.ssl.trustStoreType=PKCS12"                               │
+# │                                                                            │
+# │  Option B — Edit bin/run.sh and add the flags to the java command:         │
+# │    java -Djavax.net.ssl.trustStore=certificates/truststore.p12 \           │
+# │         -Djavax.net.ssl.trustStorePassword=changeit \                      │
+# │         -Djavax.net.ssl.trustStoreType=PKCS12 \                            │
+# │         -jar lib/yuubin-proxy-*.jar "$@"                                   │
+# └─────────────────────────────────────────────────────────────────────────────┘
+#
+# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │  GraalVM Native Image (.deb / .rpm / standalone binary)                    │
+# ├─────────────────────────────────────────────────────────────────────────────┤
+# │  Native images embed the default cacerts at build time. To override at     │
+# │  runtime, pass the same system properties — GraalVM native images support  │
+# │  -D flags just like the JVM:                                               │
+# │                                                                            │
+# │  Option A — Direct execution:                                              │
+# │    ./yuubin-proxy \                                                        │
+# │      -Djavax.net.ssl.trustStore=/etc/yuubin-proxy/certs/truststore.p12 \   │
+# │      -Djavax.net.ssl.trustStorePassword=changeit \                         │
+# │      -Djavax.net.ssl.trustStoreType=PKCS12 \                              │
+# │      --config application.yml                                              │
+# │                                                                            │
+# │  Option B — For systemd (.deb / .rpm), edit the service override:          │
+# │    sudo systemctl edit yuubin-proxy                                        │
+# │    # Add under [Service]:                                                  │
+# │    Environment="JAVA_OPTS=-Djavax.net.ssl.trustStore=/etc/yuubin-proxy/\   │
+# │      certs/truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit \    │
+# │      -Djavax.net.ssl.trustStoreType=PKCS12"                               │
+# │                                                                            │
+# │  Note: If the native image was built without --enable-all-security-services│
+# │  or -H:EnableURLProtocols=https, custom truststores may not work. The      │
+# │  Yuubin Proxy build already includes these flags in its native profile.    │
+# └─────────────────────────────────────────────────────────────────────────────┘
+#
+# ── Step 4: Configure Yuubin Proxy ──────────────────────────────────────────
+# The proxy configuration itself does not change — the truststore is a runtime
+# setting. Below is a typical config for routing through a corporate proxy.
+
+# Base directory for keystore files (used for server-side TLS, if needed)
+certificatesPath: "/etc/yuubin-proxy/certs"
+
+proxies:
+  # Forward proxy — all outbound HTTPS traffic goes through the corporate proxy
+  # which uses its own CA. The truststore (configured above) ensures the
+  # re-signed certificates are accepted.
+  - name: corporate-proxy
+    port: 8080
+    type: HTTP
+    upstreamProxy:
+      host: proxy.corp.internal
+      port: 8080
+      type: HTTP
+
+    rules:
+      # Internal services bypass the corporate proxy (direct connection)
+      - host: "*.internal.corp"
+        target: http://internal-gateway:8080
+
+  # HTTPS-terminating proxy — serves TLS using a server certificate from the
+  # same certificates directory. Clients connect to this proxy over HTTPS.
+  - name: tls-endpoint
+    port: 8443
+    type: HTTP
+    tlsEnabled: true
+    keystorePath: server.p12           # Resolved relative to certificatesPath
+    keystorePassword: "changeit"
+    rules:
+      - path: /
+        target: http://backend:8080

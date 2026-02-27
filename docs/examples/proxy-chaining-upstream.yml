@@ -1,7 +1,15 @@
+# ==============================================================================
 # Proxy Chaining Example
-# Use case: Forwarding all local proxy traffic to a corporate/parent proxy.
+# ==============================================================================
+# Use case: Corporate environments where all outbound traffic must be routed
+# through a central parent proxy. Supports server-level and rule-level chaining.
+#
+# Supported upstream types: HTTP, SOCKS5
 
 proxies:
+
+  # ---- Server-level chaining ------------------------------------------------
+  # ALL requests through this proxy are forwarded via the upstream proxy.
   - name: chained-http
     port: 8888
     type: HTTP
@@ -9,18 +17,44 @@ proxies:
       host: corp-proxy.internal
       port: 3128
       type: HTTP
+      # Optional: upstream proxy credentials (sent as Proxy-Authorization)
       username: "proxy-user"
       password: "proxy-password"
 
+  # ---- Rule-level chaining --------------------------------------------------
+  # Allows mixing direct and chained routes on the same proxy port.
+  # Only specific rules route through an upstream; others go direct.
   - name: rule-level-chained-http
     port: 8889
     type: HTTP
     rules:
+      # Direct route — no upstream proxy, connects straight to the target
       - path: /direct-route
         target: http://internal-service:8080
+
+      # Chained route — requests matching this path go through an HTTP upstream
       - path: /chained-route
         target: http://external-api:80
         upstreamProxy:
           host: specific-proxy.external
+          port: 8080
+          type: HTTP
+
+      # Host-based chaining — all traffic to this host (including HTTPS
+      # CONNECT tunnels) is routed through the upstream proxy.
+      # No path needed: matches purely by hostname.
+      - host: example.local
+        upstreamProxy:
+          host: internal-proxy.external
+          port: 8080
+          type: HTTP
+
+      # Host + path chaining — HTTPS CONNECT tunnels to this host also
+      # use the upstream proxy automatically (path is only for HTTP routing).
+      - host: stg.devdomain.co.jp
+        path: /
+        target: http://stg.devdomain.co.jp
+        upstreamProxy:
+          host: staging-proxy.corp
           port: 8080
           type: HTTP

@@ -14,6 +14,12 @@ While looking for a lightweight cross-platform proxy solution, drawing the best 
 ### Why Java?
 Beyond performance, portability is a primary objective. Java allows for seamless execution across diverse environments without the need to manage complex build pipelines or platform-specific binaries.
 
+### Proxy Chaining
+In Corporate environment, we often need to route all traffic through a parent proxy. Yuubin Proxy supports this with the `upstreamProxy` configuration. See [Proxy Chaining in Corporate Environments](docs/examples/proxy-chaining-upstream.yml) for more details.
+
+### Proxy certificates
+Yuubin Proxy supports proxy certificates. This is especially useful in environments where either Netskope, Zscaler or BlueCoat is used as a proxy. See [Proxy Certificates](docs/examples/proxy-certificates.yml) for more details.
+
 ## Features
 
 -   **Multi-Protocol Support**:
@@ -139,7 +145,68 @@ You only need to restart the service if you are upgrading the binary or need to 
 sudo systemctl restart yuubin-proxy
 ```
 
-### 2. Standard Archives (.tar.gz / .zip)
+### 2. Windows Native Binary
+For Windows users, download the standalone native binary `yuubin-proxy-windows-latest.zip` from the GitHub Releases page. Extract `yuubin-proxy-windows-latest.exe` to a permanent folder, for example `C:\yuubin-proxy\`.
+
+> [!NOTE]
+> **Windows SmartScreen**: Since this is an unsigned open-source binary, Windows Defender SmartScreen may initially block execution. When prompted, click **"More info"** and then **"Run anyway"**. Alternatively, right-click the `.exe` file, select **Properties**, check the **Unblock** box at the bottom, and click Apply.
+
+To automatically start Yuubin Proxy in the background when you log into Windows:
+
+1. Press `Win + R`, type `shell:startup`, and press Enter. This opens your user's Startup folder.
+2. Inside the folder, right-click and select **New > Shortcut**.
+3. Point the shortcut target to the executable and append the config flag, example: `"C:\yuubin-proxy\yuubin-proxy-windows-latest.exe" --config "C:\yuubin-proxy\application.yml"`
+4. *(Optional)* To hide the console window completely, you can create a small `.vbs` script instead:
+   ```vbscript
+   Set WshShell = CreateObject("WScript.Shell") 
+   WshShell.Run chr(34) & "C:\yuubin-proxy\yuubin-proxy-windows-latest.exe" & Chr(34) & " --config " & Chr(34) & "C:\yuubin-proxy\application.yml" & Chr(34), 0
+   Set WshShell = Nothing
+   ```
+   Save it as `yuubin-startup.vbs` inside the `shell:startup` folder.
+
+### 3. macOS Native Binary (launchctl)
+For macOS users, download the standalone native binary `yuubin-proxy-macos-latest.zip` from the GitHub Releases page. Extract the `yuubin-proxy-macos-latest` executable to `/usr/local/bin/yuubin-proxy`.
+
+> [!NOTE]
+> **macOS Gatekeeper**: As this is an unsigned binary, macOS will likely prevent it from running, stating the developer cannot be verified. To allow execution, remove the quarantine attribute by running this command in your terminal:
+> ```bash
+> sudo xattr -d com.apple.quarantine /usr/local/bin/yuubin-proxy
+> ```
+
+To run Yuubin Proxy automatically in the background on macOS:
+
+1. Create a macOS Property List (plist) file in `~/Library/LaunchAgents/com.yuubin.proxy.plist`:
+   ```xml
+   <?xml version="1.0" encoding="UTF-8"?>
+   <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+   <plist version="1.0">
+   <dict>
+       <key>Label</key>
+       <string>com.yuubin.proxy</string>
+       <key>ProgramArguments</key>
+       <array>
+           <string>/usr/local/bin/yuubin-proxy</string>
+           <string>--config</string>
+           <string>/path/to/your/application.yml</string>
+       </array>
+       <key>RunAtLoad</key>
+       <true/>
+       <key>KeepAlive</key>
+       <true/>
+       <key>StandardOutPath</key>
+       <string>/tmp/yuubin-proxy.log</string>
+       <key>StandardErrorPath</key>
+       <string>/tmp/yuubin-proxy.err</string>
+   </dict>
+   </plist>
+   ```
+2. Load the service into launchctl:
+   ```bash
+   launchctl load ~/Library/LaunchAgents/com.yuubin.proxy.plist
+   ```
+3. The proxy will now start automatically in the background whenever you log in. To safely unload it, run `launchctl unload ~/Library/LaunchAgents/com.yuubin.proxy.plist`.
+
+### 4. Standard Archives (.tar.gz / .zip)
 The recommended way to deploy on traditional operating systems (Windows, macOS) or platforms requiring the JVM. These archives require Java 21+ and are attached to every tagged release.
 
 **Build from Source:**
@@ -171,7 +238,7 @@ cd yuubin-proxy-*
 ./bin/run.sh
 ```
 
-### 2. Docker (Recommended for Containerized Environments)
+### 5. Docker (Recommended for Containerized Environments)
 Yuubin Proxy is available as a multi-arch Docker image (amd64/arm64).
 
 ```bash
@@ -180,7 +247,7 @@ docker run -p 8080:8080 -p 1080:1080 \
   ghcr.io/henrya/yuubin-proxy:latest
 ```
 
-### 3. Docker Compose (Build from Source)
+### 6. Docker Compose (Build from Source)
 To build and run Yuubin Proxy locally using the provided `docker-compose.yml`, you must compile the Java artifact first:
 
 ```bash
@@ -191,7 +258,7 @@ mvn clean package
 docker-compose -f docker/docker-compose.yml up -d --build
 ```
 
-### 4. GraalVM Native Image (Optional)
+### 7. GraalVM Native Image (Optional)
 For even faster startup times and a lower memory footprint, Yuubin Proxy can be compiled into a standalone native binary using GraalVM.
 
 **Build:**
@@ -245,7 +312,8 @@ You can type commands directly into the terminal:
 
 Yuubin Proxy includes endpoints for monitoring and health checks:
 
-- **Endpoint**: `http://localhost:9090` (Configurable via `admin.port`)
+- **Endpoint**: `http://localhost:9090` (Configurable via `admin.port` and `admin.bindAddress`)
+- **Bind Address**: Defaults to `127.0.0.1` (loopback) for security. Set `admin.bindAddress: "0.0.0.0"` for Kubernetes probes or remote scraping.
 - **`/health`**: Returns `OK` (200) if the application is running.
 - **`/metrics`**: Exports real-time metrics in **Prometheus** format via Micrometer.
 

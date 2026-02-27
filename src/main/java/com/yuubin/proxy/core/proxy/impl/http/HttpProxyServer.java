@@ -185,7 +185,7 @@ public class HttpProxyServer extends AbstractProxyServer {
                 .register(registry);
 
         this.healthCheckExecutor = Executors.newSingleThreadScheduledExecutor(
-                Thread.ofPlatform().daemon().name("health-check-" + configName).factory());
+                Thread.ofVirtual().name("health-check-" + configName, 0).factory());
         startHealthChecks();
     }
 
@@ -362,7 +362,17 @@ public class HttpProxyServer extends AbstractProxyServer {
             }
             int idx = line.indexOf(":");
             if (idx != -1) {
-                headers.put(line.substring(0, idx).trim(), line.substring(idx + 1).trim());
+                String key = line.substring(0, idx).trim();
+                String value = line.substring(idx + 1).trim();
+                // For security-sensitive headers, keep only the first value
+                // to prevent header injection attacks via duplicate headers.
+                if (HeaderConstants.PROXY_AUTHORIZATION.getValue().equalsIgnoreCase(key)) {
+                    if (headers.putIfAbsent(key, value) != null) {
+                        log.warn("Duplicate {} header rejected", key);
+                    }
+                    continue;
+                }
+                headers.put(key, value);
             }
         }
         return headers;
@@ -382,8 +392,13 @@ public class HttpProxyServer extends AbstractProxyServer {
             port = Integer.parseInt(hp[1]);
         }
 
-        try {
-            Socket target = connectToTarget(host, port, config.getUpstreamProxy());
+        // Resolve rule-level upstream proxy for CONNECT tunnels
+        Rule rule = RuleMatcher.match(config.getRules(), host, null);
+        UpstreamProxyConfig upstream = rule != null && rule.getUpstreamProxy() != null
+                ? rule.getUpstreamProxy()
+                : config.getUpstreamProxy();
+
+        try (Socket target = connectToTarget(host, port, upstream)) {
             target.setTcpNoDelay(true);
             clientOut.write(("HTTP/1.1 200 Connection Established\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
             clientOut.flush();
@@ -392,10 +407,18 @@ public class HttpProxyServer extends AbstractProxyServer {
             IoUtils.relay(client, target, executor, bytesSent, bytesReceived);
         } catch (IOException e) {
             log.warn("Failed to establish HTTPS tunnel to {}: {}", authority, e.getMessage());
-            writeErrorResponse(clientOut, HTTP_BAD_GATEWAY, BAD_GATEWAY_MSG);
+            try {
+                writeErrorResponse(clientOut, HTTP_BAD_GATEWAY, BAD_GATEWAY_MSG);
+            } catch (IOException ignored) {
+                log.debug("Could not send 502 to client for CONNECT {}", authority);
+            }
         } catch (Exception e) {
             log.error("Unexpected error in HTTPS tunnel for {}", authority, e);
-            writeErrorResponse(clientOut, HTTP_INTERNAL_ERROR, INTERNAL_ERROR_MSG);
+            try {
+                writeErrorResponse(clientOut, HTTP_INTERNAL_ERROR, INTERNAL_ERROR_MSG);
+            } catch (IOException ignored) {
+                log.debug("Could not send 500 to client for CONNECT {}", authority);
+            }
         }
     }
 
@@ -419,9 +442,11 @@ public class HttpProxyServer extends AbstractProxyServer {
                 return HTTP_BAD_GATEWAY;
             }
 
-            int statusCode = response.statusCode();
-            forwardResponse(response, clientOut, context, rule);
-            return statusCode;
+            try (InputStream responseBody = response.body()) {
+                int statusCode = response.statusCode();
+                forwardResponse(response, responseBody, clientOut, context, rule);
+                return statusCode;
+            }
         } catch (IOException e) {
             log.error("HTTP backend communication error: {}", e.getMessage());
             writeErrorResponse(clientOut, HTTP_BAD_GATEWAY, BAD_GATEWAY_MSG);
@@ -489,14 +514,16 @@ public class HttpProxyServer extends AbstractProxyServer {
             requestPath = "/";
         }
 
-        if (!requestPath.startsWith(rule.getPath())) {
+        String rulePath = (rule.getPath() == null || rule.getPath().isEmpty()) ? "" : rule.getPath();
+
+        if (!requestPath.startsWith(rulePath)) {
             // If it doesn't match the rule path anymore (e.g., due to absolute URI mismatch
             // with rule), deny
             writeErrorResponse(clientOut, HTTP_NOT_FOUND, NOT_FOUND_MSG);
             return null;
         }
 
-        String subPath = requestPath.substring(rule.getPath().length());
+        String subPath = requestPath.substring(rulePath.length());
         if (!subPath.startsWith(PATH_SEP)) {
             subPath = PATH_SEP + subPath;
         }
@@ -625,7 +652,8 @@ public class HttpProxyServer extends AbstractProxyServer {
      * @param rule      The matched routing rule.
      * @throws IOException If an I/O error occurs.
      */
-    private void forwardResponse(HttpResponse<InputStream> response, OutputStream clientOut, RequestContext context,
+    private void forwardResponse(HttpResponse<InputStream> response, InputStream responseBody, OutputStream clientOut,
+            RequestContext context,
             Rule rule) throws IOException {
         int statusCode = response.statusCode();
         String reasonPhrase = REASON_PHRASES.getOrDefault(statusCode, "Unknown");
@@ -651,9 +679,7 @@ public class HttpProxyServer extends AbstractProxyServer {
         clientOut.write("\r\n".getBytes(StandardCharsets.US_ASCII));
 
         CountingOutputStream countingOut = new CountingOutputStream(clientOut);
-        try (InputStream responseBody = response.body()) {
-            responseBody.transferTo(countingOut);
-        }
+        responseBody.transferTo(countingOut);
         clientOut.flush();
         context.setBytes(countingOut.getCount());
     }
@@ -693,7 +719,9 @@ public class HttpProxyServer extends AbstractProxyServer {
                 && !(uri.getScheme().equals("https") && uri.getPort() == 443)) {
             base.append(':').append(uri.getPort());
         }
-        base.append(rule.getPath());
+        if (rule.getPath() != null) {
+            base.append(rule.getPath());
+        }
         return base.toString();
     }
 
@@ -721,42 +749,6 @@ public class HttpProxyServer extends AbstractProxyServer {
      */
     private static boolean isAllowedHeader(String k) {
         return !DISALLOWED_HEADERS.contains(k);
-    }
-
-    /**
-     * Finds a matching routing rule for the given host and path.
-     * Rules with a specified host take precedence.
-     * Matches the path exactly or as a prefix followed by a slash.
-     * 
-     * @param host The requested host.
-     * @param path The request path.
-     * @return The matching rule, or null if no match is found.
-     */
-    private Rule findMatchingRule(String host, String path) {
-        if (config.getRules() == null) {
-            return null;
-        }
-        return config.getRules().stream()
-                .filter(r -> {
-                    // Host check (if specified)
-                    if (r.getHost() != null && !r.getHost().isEmpty() && !r.getHost().equalsIgnoreCase(host)) {
-                        return false;
-                    }
-                    // Path check
-                    String rulePath = r.getPath();
-                    if (rulePath.equals(path)) {
-                        return true;
-                    }
-                    if (path.startsWith(rulePath)) {
-                        // e.g. rulePath is "/" -> matches "/chained"
-                        // rulePath is "/chained" -> matches "/chained" and "/chained/"
-                        return rulePath.equals("/") || path.length() == rulePath.length()
-                                || path.charAt(rulePath.length()) == '/';
-                    }
-                    return false;
-                })
-                .findFirst()
-                .orElse(null);
     }
 
     /**
@@ -858,8 +850,11 @@ public class HttpProxyServer extends AbstractProxyServer {
 
         requestsTotal.increment();
 
-        Map<String, String> headers = readRequestHeaders(in, remoteAddr);
-        if (headers == null) {
+        Map<String, String> headers;
+        try {
+            headers = readHeaders(in);
+        } catch (IOException e) {
+            log.warn("Error reading headers from {}: {}", remoteAddr, e.getMessage());
             return false;
         }
 
@@ -886,7 +881,7 @@ public class HttpProxyServer extends AbstractProxyServer {
             return false;
         }
 
-        Rule rule = findMatchingRule(uri.getHost(), uri.getPath());
+        Rule rule = RuleMatcher.match(config.getRules(), uri.getHost(), uri.getPath());
         if ("websocket".equalsIgnoreCase(headers.get(HeaderConstants.UPGRADE.getValue()))) {
             handleWebSocket(out, in, firstLine, headers, context, rule);
             return false;
@@ -932,15 +927,6 @@ public class HttpProxyServer extends AbstractProxyServer {
         } catch (IOException e) {
             log.debug("Error reading request line from {}: {}", remoteAddr, e.getMessage());
             return null;
-        }
-    }
-
-    private Map<String, String> readRequestHeaders(InputStream in, String remoteAddr) {
-        try {
-            return readHeaders(in);
-        } catch (IOException e) {
-            log.warn("Error reading headers from {}: {}", remoteAddr, e.getMessage());
-            return Collections.emptyMap();
         }
     }
 

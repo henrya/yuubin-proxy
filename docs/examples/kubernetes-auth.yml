@@ -1,0 +1,46 @@
+# ==============================================================================
+# Kubernetes-Ready Authentication Example
+# ==============================================================================
+# Use case: Running Yuubin Proxy in a Kubernetes cluster where user credentials
+# are mounted as a ConfigMap or Secret, or injected as environment variables.
+#
+# Three credential sources (can be combined — all are merged):
+#   1. usersPath     — YAML file (local or classpath)
+#   2. usersDirectory — directory where each file is a username, content is password
+#   3. usersEnv      — environment variable in "user1:pass1,user2:pass2" format
+
+auth:
+  enabled: true
+
+  # Source 1: YAML file (classpath or filesystem)
+  # usersPath: classpath:users.yml
+
+  # Source 2: Kubernetes Secret/ConfigMap mount directory
+  # Each file name = username, file content = password.
+  # Hidden files (starting with .) are automatically skipped.
+  usersDirectory: /etc/yuubin-proxy/secrets/users
+
+  # Source 3: Environment variable
+  # usersEnv: PROXY_USERS
+
+proxies:
+  # Authenticated HTTP proxy
+  - name: k8s-http-proxy
+    port: 8080
+    type: HTTP
+    authEnabled: true              # Require Proxy-Authorization header
+    timeout: 30000
+    maxConnections: 5000
+
+  # Authenticated SOCKS5 proxy on the same deployment
+  - name: k8s-socks-proxy
+    port: 1080
+    type: SOCKS5
+    authEnabled: true
+
+# Kubernetes health probe endpoint
+admin:
+  enabled: true
+  port: 9090
+  # Bind to all interfaces so K8s probes can reach /health
+  bindAddress: "0.0.0.0"

@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.util.Arrays;
+import com.yuubin.proxy.config.YuubinProperties;
 import java.net.Socket;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,7 +34,7 @@ class Socks4ProxyServerTest {
         LoggingService loggingService = Mockito.mock(LoggingService.class);
         AuthService authService = Mockito.mock(AuthService.class);
         io.micrometer.core.instrument.MeterRegistry registry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
-        com.yuubin.proxy.config.YuubinProperties globalProps = new com.yuubin.proxy.config.YuubinProperties();
+        YuubinProperties globalProps = new YuubinProperties();
         ProxyServerConfig config = new ProxyServerConfig();
         config.setPort(proxyPort);
         config.setType("SOCKS4");
@@ -99,7 +101,7 @@ class Socks4ProxyServerTest {
         LoggingService loggingService = Mockito.mock(LoggingService.class);
         AuthService authService = Mockito.mock(AuthService.class);
         io.micrometer.core.instrument.MeterRegistry registry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
-        com.yuubin.proxy.config.YuubinProperties globalProps = new com.yuubin.proxy.config.YuubinProperties();
+        YuubinProperties globalProps = new YuubinProperties();
         ProxyServerConfig config = new ProxyServerConfig();
         config.setPort(proxyPort);
         config.setType("SOCKS4");
@@ -139,7 +141,7 @@ class Socks4ProxyServerTest {
         LoggingService loggingService = Mockito.mock(LoggingService.class);
         AuthService authService = Mockito.mock(AuthService.class);
         io.micrometer.core.instrument.MeterRegistry registry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
-        com.yuubin.proxy.config.YuubinProperties globalProps = new com.yuubin.proxy.config.YuubinProperties();
+        YuubinProperties globalProps = new YuubinProperties();
         ProxyServerConfig config = new ProxyServerConfig();
         config.setPort(proxyPort);
         config.setType("SOCKS4");
@@ -199,7 +201,7 @@ class Socks4ProxyServerTest {
         LoggingService loggingService = Mockito.mock(LoggingService.class);
         AuthService authService = Mockito.mock(AuthService.class);
         io.micrometer.core.instrument.MeterRegistry registry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
-        com.yuubin.proxy.config.YuubinProperties globalProps = new com.yuubin.proxy.config.YuubinProperties();
+        YuubinProperties globalProps = new YuubinProperties();
         ProxyServerConfig config = new ProxyServerConfig();
         config.setPort(proxyPort);
         config.setType("SOCKS4");
@@ -248,7 +250,7 @@ class Socks4ProxyServerTest {
         LoggingService loggingService = Mockito.mock(LoggingService.class);
         AuthService authService = Mockito.mock(AuthService.class);
         io.micrometer.core.instrument.MeterRegistry registry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
-        com.yuubin.proxy.config.YuubinProperties globalProps = new com.yuubin.proxy.config.YuubinProperties();
+        YuubinProperties globalProps = new YuubinProperties();
         ProxyServerConfig config = new ProxyServerConfig();
         config.setPort(proxyPort);
         config.setType("SOCKS4");
@@ -325,7 +327,7 @@ class Socks4ProxyServerTest {
         LoggingService loggingService = Mockito.mock(LoggingService.class);
         AuthService authService = Mockito.mock(AuthService.class);
         io.micrometer.core.instrument.MeterRegistry registry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
-        com.yuubin.proxy.config.YuubinProperties globalProps = new com.yuubin.proxy.config.YuubinProperties();
+        YuubinProperties globalProps = new YuubinProperties();
         ProxyServerConfig config = new ProxyServerConfig();
         config.setPort(proxyPort);
         config.setType("SOCKS4");
@@ -372,7 +374,7 @@ class Socks4ProxyServerTest {
         LoggingService loggingService = Mockito.mock(LoggingService.class);
         AuthService authService = Mockito.mock(AuthService.class);
         io.micrometer.core.instrument.MeterRegistry registry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
-        com.yuubin.proxy.config.YuubinProperties globalProps = new com.yuubin.proxy.config.YuubinProperties();
+        YuubinProperties globalProps = new YuubinProperties();
         ProxyServerConfig config = new ProxyServerConfig();
         config.setPort(proxyPort);
         config.setType("SOCKS4");
@@ -421,7 +423,7 @@ class Socks4ProxyServerTest {
         LoggingService loggingService = Mockito.mock(LoggingService.class);
         AuthService authService = Mockito.mock(AuthService.class);
         io.micrometer.core.instrument.MeterRegistry registry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
-        com.yuubin.proxy.config.YuubinProperties globalProps = new com.yuubin.proxy.config.YuubinProperties();
+        YuubinProperties globalProps = new YuubinProperties();
         ProxyServerConfig config = new ProxyServerConfig();
         config.setPort(proxyPort);
         config.setType("SOCKS4");
@@ -448,7 +450,7 @@ class Socks4ProxyServerTest {
             out.writeShort(80);
             out.write(new byte[] { 127, 0, 0, 1 });
             byte[] longUser = new byte[1026];
-            java.util.Arrays.fill(longUser, (byte) 'a');
+            Arrays.fill(longUser, (byte) 'a');
             out.write(longUser);
             out.flush();
 
@@ -473,7 +475,7 @@ class Socks4ProxyServerTest {
         LoggingService loggingService = Mockito.mock(LoggingService.class);
         AuthService authService = Mockito.mock(AuthService.class);
         io.micrometer.core.instrument.MeterRegistry registry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
-        com.yuubin.proxy.config.YuubinProperties globalProps = new com.yuubin.proxy.config.YuubinProperties();
+        YuubinProperties globalProps = new YuubinProperties();
 
         // Test timeout > 0
         ProxyServerConfig config1 = new ProxyServerConfig();
@@ -535,7 +537,7 @@ class Socks4ProxyServerTest {
         String str = req.toString();
         assertThat(str).contains("command=1");
         assertThat(str).contains("port=80");
-        assertThat(str).contains("ipBytes=" + java.util.Arrays.toString(ip));
+        assertThat(str).contains("ipBytes=" + Arrays.toString(ip));
         assertThat(str).contains("userId='user'");
         assertThat(str).contains("targetHost='host'");
     }
