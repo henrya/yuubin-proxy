@@ -1,0 +1,39 @@
+name: Artifact Cleanup
+on: workflow_dispatch
+
+permissions:
+  actions: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const artifacts = await github.paginate(
+              github.rest.actions.listArtifactsForRepo,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo
+              }
+            );
+
+            console.log(`Found ${artifacts.length} artifacts to delete`);
+            let deleted = 0;
+            for (const artifact of artifacts) {
+              try {
+                await github.rest.actions.deleteArtifact({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  artifact_id: artifact.id
+                });
+                deleted++;
+              } catch (e) {
+                console.log(`Failed to delete ${artifact.name} (${artifact.id}): ${e.message}`);
+              }
+            }
+            console.log(`Deleted ${deleted}/${artifacts.length} artifacts`);
