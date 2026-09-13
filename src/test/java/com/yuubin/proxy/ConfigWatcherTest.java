@@ -44,6 +44,7 @@ class ConfigWatcherTest {
         return false;
       }
     });
+    await().atMost(Duration.ofSeconds(10)).until(app::isWatchingConfiguration);
 
     // Update config to port2
     String yaml2 = """
