@@ -187,7 +187,12 @@ public class AuthService {
         try (Stream<Path> stream = Files.list(path)) {
             stream.filter(Files::isRegularFile)
                     .forEach(file -> {
-                        String username = file.getFileName().toString();
+                        Path fileName = file.getFileName();
+                        if (fileName == null) {
+                            log.warn("Skipping users directory entry without a file name: {}", file);
+                            return;
+                        }
+                        String username = fileName.toString();
                         // Skip hidden files or Kubernetes symbolic links like ..data
                         if (username.startsWith(".")) {
                             return;

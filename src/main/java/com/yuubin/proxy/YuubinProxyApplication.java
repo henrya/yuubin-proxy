@@ -69,10 +69,10 @@ public class YuubinProxyApplication implements Callable<Integer> {
 
     /**
      * Service to watch for configuration file changes.
-     * Not volatile because it's only assigned once during startup and read during
-     * shutdown.
+     * Volatile because it is published by the watcher thread and read during
+     * shutdown and readiness checks.
      */
-    private WatchService watchService;
+    private volatile WatchService watchService;
 
     /** Reference to the registered shutdown hook for cleanup. */
     private Thread shutdownHook;
@@ -276,17 +276,22 @@ public class YuubinProxyApplication implements Callable<Integer> {
             try {
                 Path path = Paths.get(configPath).toAbsolutePath();
                 Path parent = path.getParent();
-                if (parent == null) {
+                Path fileName = path.getFileName();
+                if (parent == null || fileName == null) {
+                    log.warn("Configuration path cannot be watched: {}", path);
                     return;
                 }
 
-                this.watchService = FileSystems.getDefault().newWatchService();
-                parent.register(watchService, StandardWatchEventKinds.ENTRY_MODIFY);
+                try (WatchService newWatchService = FileSystems.getDefault().newWatchService()) {
+                    parent.register(newWatchService, StandardWatchEventKinds.ENTRY_MODIFY);
+                    this.watchService = newWatchService;
 
-                log.info("Watching configuration file for changes: {}", path);
-                String fileName = path.getFileName().toString();
+                    log.info("Watching configuration file for changes: {}", path);
+                    runWatcherLoop(newWatchService, fileName.toString());
+                } finally {
+                    this.watchService = null;
+                }
 
-                runWatcherLoop(fileName);
             } catch (ClosedWatchServiceException e) {
                 log.debug("Watch service closed");
             } catch (InterruptedException e) {
@@ -303,18 +308,26 @@ public class YuubinProxyApplication implements Callable<Integer> {
     }
 
     /**
+     * Indicates whether the configuration watcher registered successfully.
+     */
+    boolean isWatchingConfiguration() {
+        return watchService != null;
+    }
+
+    /**
      * Executes the main loop for the configuration file watcher.
      * 
+     * @param watcher The registered watch service.
      * @param fileName The name of the file to watch.
      * @throws InterruptedException If the thread is interrupted.
      */
-    private void runWatcherLoop(String fileName) throws InterruptedException {
+    private void runWatcherLoop(WatchService watcher, String fileName) throws InterruptedException {
         // Debounce: track the last event time and reload only after 1s of silence.
         final long debounceNanos = 1_000_000_000L;
         long lastEventNano = 0;
 
         while (running.get()) {
-            WatchKey key = watchService.poll(500, TimeUnit.MILLISECONDS);
+            WatchKey key = watcher.poll(500, TimeUnit.MILLISECONDS);
             if (key != null) {
                 for (WatchEvent<?> event : key.pollEvents()) {
                     if (event.context().toString().equals(fileName)) {
