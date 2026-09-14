@@ -94,6 +94,7 @@ jobs:
           path: |
             target/yuubin-proxy-${{ matrix.os }}
             target/yuubin-proxy-${{ matrix.os }}.exe
+          retention-days: 1
 
   # Create the GitHub Release, attaching both fat JARs and native binaries
   release-github:

@@ -1,11 +1,25 @@
 name: Artifact Cleanup
-on: workflow_dispatch
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      max_age_hours:
+        description: Delete superseded artifacts older than this many hours
+        required: false
+        default: '48'
 
 permissions:
   actions: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  MAX_ARTIFACT_AGE_HOURS: ${{ inputs.max_age_hours || '48' }}
+
+concurrency:
+  group: artifact-cleanup
+  cancel-in-progress: false
 
 jobs:
   purge:
@@ -14,17 +28,78 @@ jobs:
       - uses: actions/github-script@v9
         with:
           script: |
+            const maxAgeHours = Number(process.env.MAX_ARTIFACT_AGE_HOURS);
+            if (!Number.isFinite(maxAgeHours) || maxAgeHours < 1) {
+              core.setFailed('MAX_ARTIFACT_AGE_HOURS must be a positive number');
+              return;
+            }
+
             const artifacts = await github.paginate(
               github.rest.actions.listArtifactsForRepo,
               {
                 owner: context.repo.owner,
-                repo: context.repo.repo
+                repo: context.repo.repo,
+                per_page: 100
               }
             );
 
-            console.log(`Found ${artifacts.length} artifacts to delete`);
+            const cutoff = Date.now() - maxAgeHours * 60 * 60 * 1000;
+            const newestArtifactNames = new Set();
+            const candidates = [];
+
+            for (const artifact of [...artifacts].sort(
+              (left, right) => Date.parse(right.created_at) - Date.parse(left.created_at)
+            )) {
+              if (!newestArtifactNames.has(artifact.name)) {
+                newestArtifactNames.add(artifact.name);
+                core.info(`Keeping newest ${artifact.name} (${artifact.id})`);
+                continue;
+              }
+
+              const createdAt = Date.parse(artifact.created_at);
+              if (!Number.isFinite(createdAt)) {
+                core.warning(`Skipping ${artifact.name} (${artifact.id}): invalid creation time`);
+                continue;
+              }
+              if (createdAt < cutoff) {
+                candidates.push(artifact);
+              }
+            }
+
+            core.info(
+              `Found ${candidates.length} superseded artifacts older than ${maxAgeHours} hours`
+            );
+
+            const runStatuses = new Map();
+            async function isCompletedRun(runId) {
+              if (!runId) {
+                return false;
+              }
+              if (!runStatuses.has(runId)) {
+                try {
+                  const response = await github.rest.actions.getWorkflowRun({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    run_id: runId
+                  });
+                  runStatuses.set(runId, response.data.status);
+                } catch (error) {
+                  core.warning(`Could not inspect workflow run ${runId}: ${error.message}`);
+                  runStatuses.set(runId, 'unknown');
+                }
+              }
+              return runStatuses.get(runId) === 'completed';
+            }
+
             let deleted = 0;
-            for (const artifact of artifacts) {
+            let failed = 0;
+            let reclaimedBytes = 0;
+            for (const artifact of candidates) {
+              if (!await isCompletedRun(artifact.workflow_run?.id)) {
+                core.info(`Skipping ${artifact.name} (${artifact.id}): run is not completed`);
+                continue;
+              }
+
               try {
                 await github.rest.actions.deleteArtifact({
                   owner: context.repo.owner,
@@ -32,8 +107,24 @@ jobs:
                   artifact_id: artifact.id
                 });
                 deleted++;
-              } catch (e) {
-                console.log(`Failed to delete ${artifact.name} (${artifact.id}): ${e.message}`);
+                reclaimedBytes += artifact.size_in_bytes;
+                core.info(`Deleted ${artifact.name} (${artifact.id})`);
+              } catch (error) {
+                if (error.status === 404) {
+                  core.info(`Artifact ${artifact.name} (${artifact.id}) was already deleted`);
+                  continue;
+                }
+                failed++;
+                core.warning(
+                  `Failed to delete ${artifact.name} (${artifact.id}): ${error.message}`
+                );
               }
             }
-            console.log(`Deleted ${deleted}/${artifacts.length} artifacts`);
+
+            const reclaimedMiB = (reclaimedBytes / 1024 / 1024).toFixed(1);
+            core.info(
+              `Deleted ${deleted}/${candidates.length} artifacts and reclaimed ${reclaimedMiB} MiB`
+            );
+            if (failed > 0) {
+              core.setFailed(`Failed to delete ${failed} artifacts`);
+            }
